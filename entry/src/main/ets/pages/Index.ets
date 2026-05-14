@@ -1,23 +1,33 @@
+import { HomePage } from './HomePage';
+import { ProfilePage } from './ProfilePage';
+import { DiscoverPage } from './DiscoverPage';
+
 @Entry
 @Component
 struct Index {
-  @State message: string = 'Hello World';
+  @State currentIndex: number = 0;
 
   build() {
-    RelativeContainer() {
-      Text(this.message)
-        .id('HelloWorld')
-        .fontSize($r('app.float.page_text_font_size'))
-        .fontWeight(FontWeight.Bold)
-        .alignRules({
-          center: { anchor: '__container__', align: VerticalAlign.Center },
-          middle: { anchor: '__container__', align: HorizontalAlign.Center }
-        })
-        .onClick(() => {
-          this.message = 'Welcome';
-        })
+    Tabs({ index: this.currentIndex }) {
+      TabContent() {
+        HomePage()
+      }
+      .tabBar({ text: '首页', icon: $r('app.media.startIcon') })
+
+      TabContent() {
+        DiscoverPage()
+      }
+      .tabBar({ text: '发现', icon: $r('app.media.startIcon') })
+
+      TabContent() {
+        ProfilePage()
+      }
+      .tabBar({ text: '我的', icon: $r('app.media.startIcon') })
     }
-    .height('100%')
-    .width('100%')
+    .barMode(BarMode.Fixed)
+    .barPosition(BarPosition.End)
+    .onChange((index: number) => {
+      this.currentIndex = index;
+    })
   }
 }
