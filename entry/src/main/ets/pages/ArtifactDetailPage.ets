@@ -2,7 +2,7 @@
 import router from '@ohos.router';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import promptAction from '@ohos.promptAction';
-
+import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
 @Entry
 @Component
 export struct ArtifactDetailPage {
@@ -68,29 +68,64 @@ export struct ArtifactDetailPage {
                 .margin({ bottom: 30 })
 
               // 功能按钮行
-              Row() {
-                Button('🔊 语音讲解')
-                  .backgroundColor('#007AFF')
-                  .onClick(() => {
-                    // 预留：范力烨实现语音播放
-                    this.showToast('语音讲解功能开发中');
-                  })
-                Button('❤️ 点赞')
-                  .backgroundColor('#FF9500')
-                  .onClick(() => {
-                    // 预留：刘清实现点赞
-                    this.showToast('点赞功能开发中');
-                  })
-                Button('⭐ 收藏')
-                  .backgroundColor('#28A745')
-                  .onClick(() => {
-                    // 预留：刘清实现收藏
-                    this.showToast('收藏功能开发中');
-                  })
+              Column({ space: 12 }) {
+                Row({ space: 12 }) {
+                  Button('🎧 语音讲解', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#1677FF')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      if (this.artifact !== null) {
+                        const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
+                        MuseumVoiceService.speak(text);
+                        this.showToast('正在播放语音讲解');
+                      }
+                    })
+
+                  Button('🎙️ 语音问答', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#8E44AD')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      if (this.artifact !== null) {
+                        const question = '这个文物在哪个博物馆';
+                        const answer = MuseumVoiceService.answerQuestion(this.artifact, question);
+                        MuseumVoiceService.speak(answer);
+                        this.showToast(answer);
+                      }
+                    })
+                }
+                .width('100%')
+
+                Row({ space: 12 }) {
+                  Button('❤️ 点赞', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#FF7A00')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      this.showToast('点赞成功');
+                    })
+
+                  Button('⭐ 收藏', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#18A058')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      this.showToast('收藏成功');
+                    })
+                }
+                .width('100%')
               }
               .width('100%')
-              .justifyContent(FlexAlign.SpaceAround)
-              .margin({ bottom: 30 })
+              .margin({ top: 20 })
 
               // 评论区占位
               Column() {
