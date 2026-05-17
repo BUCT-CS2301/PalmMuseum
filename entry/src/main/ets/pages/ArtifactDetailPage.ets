@@ -1,40 +1,100 @@
-// pages/ArtifactDetailPage.ets
+
 import router from '@ohos.router';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import promptAction from '@ohos.promptAction';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
+
+// 关联实体接口
+interface RelatedEntity {
+  title: string;
+  id: string;
+}
+
 @Entry
 @Component
 export struct ArtifactDetailPage {
   @State artifact: Artifact | null = null;
   private artifactId: string = '';
 
+  @State scaleValue: number = 1;
+  @State offsetX: number = 0;
+  @State offsetY: number = 0;
+
+  @State relatedEntities: RelatedEntity[] = [];
+  @State relatedList: Artifact[] = [];
+  @State currentImageIndex: number = 0;
+
   aboutToAppear() {
-    // 获取路由传递的参数
     const params = router.getParams() as Record<string, string>;
-    if (params && params.id) {
-      this.artifactId = params.id;
-      // 根据ID从Mock数据中查找文物
+    if (params && params['objectId']) {
+      this.artifactId = params['objectId'];
       const found = mockArtifacts.find(item => item.id === this.artifactId);
       this.artifact = found || null;
+      if (this.artifact) {
+        this.loadRelatedData();
+      }
     }
+  }
+
+  private loadRelatedData() {
+    if (!this.artifact) return;
+
+    this.relatedEntities = mockArtifacts
+      .filter(a => a.period === this.artifact!.period && a.id !== this.artifact!.id)
+      .map(a => ({ title: a.title, id: a.id } as RelatedEntity));
+
+    this.relatedList = mockArtifacts
+      .filter(a => a.id !== this.artifact!.id &&
+        (a.period === this.artifact!.period || a.type === this.artifact!.type))
+      .slice(0, 4);
   }
 
   build() {
     Column() {
       if (this.artifact) {
-        // 滚动区域，避免内容过长
         Scroll() {
           Column() {
-            // 高清图片（支持点击全屏预览，先简单展示）
-            Image(this.artifact.imageUrl)
-              .width('100%')
-              .height(400)
-              .objectFit(ImageFit.Cover)
-              .backgroundColor('#CCCCCC')
-              .alt($r('app.media.startIcon'))
+            // 图片区域
+            Stack() {
+              Image(this.artifact.imageUrl)
+                .width('100%')
+                .height(400)
+                .objectFit(ImageFit.Cover)
+                .backgroundColor('#CCCCCC')
+                .alt($r('app.media.startIcon'))
+                .scale({ x: this.scaleValue, y: this.scaleValue })
+                .offset({ x: this.offsetX, y: this.offsetY })
+                .gesture(
+                  GestureGroup(GestureMode.Parallel,
+                    PinchGesture()
+                      .onActionUpdate((event: GestureEvent) => {
+                        this.scaleValue = event.scale;
+                      })
+                      .onActionEnd(() => {
+                        if (this.scaleValue < 0.5) this.scaleValue = 0.5;
+                        if (this.scaleValue > 3) this.scaleValue = 3;
+                      }),
+                    PanGesture({ fingers: 2 })
+                      .onActionUpdate((event: GestureEvent) => {
+                        this.offsetX = event.offsetX;
+                        this.offsetY = event.offsetY;
+                      })
+                  )
+                )
 
-            // 文物基本信息卡片
+              Text(`${this.currentImageIndex + 1}/1`)
+                .fontSize(12)
+                .fontColor('#FFFFFF')
+                .backgroundColor('#80000000')
+                .borderRadius(10)
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                .position({ x: '90%', y: '90%' })
+            }
+            .width('100%')
+            .height(400)
+            .backgroundColor('#FAFAFA')
+
+            // 基本信息
             Column() {
               Text(this.artifact.title)
                 .fontSize(24)
@@ -65,9 +125,91 @@ export struct ArtifactDetailPage {
                 .fontSize(16)
                 .lineHeight(24)
                 .textAlign(TextAlign.Start)
-                .margin({ bottom: 30 })
+                .margin({ bottom: 20 })
 
-              // 功能按钮行
+              // 同朝代关联实体
+              if (this.relatedEntities.length > 0) {
+                Column() {
+                  Text('同朝代文物')
+                    .fontSize(16)
+                    .fontWeight(FontWeight.Bold)
+                    .alignSelf(ItemAlign.Start)
+                    .margin({ bottom: 8 })
+
+                  Flex({ wrap: FlexWrap.Wrap }) {
+                    ForEach(this.relatedEntities, (entity: RelatedEntity) => {
+                      Text(entity.title)
+                        .fontSize(13)
+                        .fontColor('#1A73E8')
+                        .backgroundColor('#E8F0FE')
+                        .borderRadius(12)
+                        .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                        .margin({ right: 8, bottom: 6 })
+                        .onClick(() => {
+                          router.replaceUrl({
+                            url: 'pages/ArtifactDetailPage',
+                            params: { objectId: entity.id }
+                          });
+                        })
+                    }, (entity: RelatedEntity) => entity.id)
+                  }
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Start)
+                .margin({ bottom: 20 })
+              }
+
+              // 相关推荐
+              if (this.relatedList.length > 0) {
+                Column() {
+                  Text('相关推荐')
+                    .fontSize(18)
+                    .fontWeight(FontWeight.Bold)
+                    .alignSelf(ItemAlign.Start)
+                    .margin({ bottom: 8 })
+
+                  Scroll() {
+                    Row() {
+                      ForEach(this.relatedList, (item: Artifact) => {
+                        Column() {
+                          Image(item.imageUrl)
+                            .width(120)
+                            .height(120)
+                            .objectFit(ImageFit.Cover)
+                            .borderRadius(8)
+                            .alt($r('app.media.startIcon'))
+
+                          Text(item.title)
+                            .fontSize(12)
+                            .maxLines(1)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .width(120)
+                            .margin({ top: 4 })
+
+                          Text(item.period)
+                            .fontSize(11)
+                            .fontColor('#888')
+                        }
+                        .margin({ right: 8 })
+                        .onClick(() => {
+                          router.replaceUrl({
+                            url: 'pages/ArtifactDetailPage',
+                            params: { objectId: item.id }
+                          });
+                        })
+                      }, (item: Artifact) => item.id)
+                    }
+                    .padding({ left: 0, right: 0, top: 8, bottom: 16 })
+                  }
+                  .scrollable(ScrollDirection.Horizontal)
+                  .scrollBar(BarState.Off)
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Start)
+                .margin({ bottom: 20 })
+              }
+
+              // 功能按钮（融合语音功能）
               Column({ space: 12 }) {
                 Row({ space: 12 }) {
                   Button('🎧 语音讲解', { type: ButtonType.Capsule })
@@ -78,9 +220,13 @@ export struct ArtifactDetailPage {
                     .fontColor(Color.White)
                     .onClick(() => {
                       if (this.artifact !== null) {
-                        const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
-                        MuseumVoiceService.speak(text);
-                        this.showToast('正在播放语音讲解');
+                        try {
+                          const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
+                          MuseumVoiceService.speak(text);
+                          this.showToast('正在播放语音讲解');
+                        } catch (e) {
+                          this.showToast('语音服务暂不可用');
+                        }
                       }
                     })
 
@@ -92,10 +238,14 @@ export struct ArtifactDetailPage {
                     .fontColor(Color.White)
                     .onClick(() => {
                       if (this.artifact !== null) {
-                        const question = '这个文物在哪个博物馆';
-                        const answer = MuseumVoiceService.answerQuestion(this.artifact, question);
-                        MuseumVoiceService.speak(answer);
-                        this.showToast(answer);
+                        try {
+                          const question = '这个文物在哪个博物馆';
+                          const answer = MuseumVoiceService.answerQuestion(this.artifact, question);
+                          MuseumVoiceService.speak(answer);
+                          this.showToast(answer);
+                        } catch (e) {
+                          this.showToast('语音问答暂不可用');
+                        }
                       }
                     })
                 }
@@ -148,16 +298,13 @@ export struct ArtifactDetailPage {
         }
         .scrollBar(BarState.Auto)
       } else {
-        // 文物不存在的情况
         Column() {
           Text('未找到该文物')
             .fontSize(20)
             .fontColor('#FF0000')
           Button('返回首页')
             .margin({ top: 20 })
-            .onClick(() => {
-              router.back();
-            })
+            .onClick(() => router.back())
         }
         .width('100%')
         .height('100%')
