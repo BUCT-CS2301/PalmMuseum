@@ -6,6 +6,11 @@
     "pages/LoginPage",
     "pages/RegisterPage",
     "pages/DiscoverPage",
-    "pages/ArtifactDetailPage"
+    "pages/ArtifactDetailPage",
+    "pages/MyFavoritesPage",
+    "pages/MyCommentsPage",
+    "pages/MyHistoryPage",
+    "pages/MyUploadsPage",
+    "pages/PrivacySettingPage"
   ]
 }

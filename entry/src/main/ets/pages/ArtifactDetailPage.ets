@@ -3,30 +3,69 @@ import router from '@ohos.router';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import promptAction from '@ohos.promptAction';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
+import { CommentItem, InteractionSummary } from '../common/models/InteractionModels';
+import { interactionStore } from '../common/store/InteractionStore';
+import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
+import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
+
 @Entry
 @Component
 export struct ArtifactDetailPage {
+  @StorageLink('isLogin') isLogin: boolean = false;
+  @StorageLink('username') username: string = '';
   @State artifact: Artifact | null = null;
+  @State likeSummary: InteractionSummary = { active: false, count: 0 };
+  @State favoriteSummary: InteractionSummary = { active: false, count: 0 };
+  @State comments: CommentItem[] = [];
+  @State commentInput: string = '';
+  @State isSubmittingComment: boolean = false;
+  @State isUploadingPhoto: boolean = false;
   private artifactId: string = '';
 
   aboutToAppear() {
-    // 获取路由传递的参数
     const params = router.getParams() as Record<string, string>;
     if (params && params.id) {
       this.artifactId = params.id;
-      // 根据ID从Mock数据中查找文物
       const found = mockArtifacts.find(item => item.id === this.artifactId);
       this.artifact = found || null;
+      if (this.artifact) {
+        this.initInteractionData();
+      }
     }
+  }
+
+  private resolveActor(): string {
+    if (this.isLogin && this.username) {
+      return this.username;
+    }
+    return '访客';
+  }
+
+  private async initInteractionData() {
+    if (!this.artifact) {
+      return;
+    }
+    const actor = this.resolveActor();
+    if (this.isLogin && this.username) {
+      await interactionStore.recordHistory(this.artifact, this.username);
+    }
+    await this.refreshInteractionState(actor);
+  }
+
+  private async refreshInteractionState(actor: string = this.resolveActor()) {
+    if (!this.artifact) {
+      return;
+    }
+    this.likeSummary = await interactionStore.getLikeSummary(this.artifact.id, actor);
+    this.favoriteSummary = await interactionStore.getFavoriteSummary(this.artifact.id, actor);
+    this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id);
   }
 
   build() {
     Column() {
       if (this.artifact) {
-        // 滚动区域，避免内容过长
         Scroll() {
           Column() {
-            // 高清图片（支持点击全屏预览，先简单展示）
             Image(this.artifact.imageUrl)
               .width('100%')
               .height(400)
@@ -34,7 +73,6 @@ export struct ArtifactDetailPage {
               .backgroundColor('#CCCCCC')
               .alt($r('app.media.startIcon'))
 
-            // 文物基本信息卡片
             Column() {
               Text(this.artifact.title)
                 .fontSize(24)
@@ -67,7 +105,6 @@ export struct ArtifactDetailPage {
                 .textAlign(TextAlign.Start)
                 .margin({ bottom: 30 })
 
-              // 功能按钮行
               Column({ space: 12 }) {
                 Row({ space: 12 }) {
                   Button('🎧 语音讲解', { type: ButtonType.Capsule })
@@ -84,7 +121,7 @@ export struct ArtifactDetailPage {
                       }
                     })
 
-                  Button('🎙️ 语音问答', { type: ButtonType.Capsule })
+                  Button('🎤 语音问答', { type: ButtonType.Capsule })
                     .layoutWeight(1)
                     .height(44)
                     .fontSize(15)
@@ -102,45 +139,45 @@ export struct ArtifactDetailPage {
                 .width('100%')
 
                 Row({ space: 12 }) {
-                  Button('❤️ 点赞', { type: ButtonType.Capsule })
+                  Button(this.likeSummary.active ? `❤️ 已赞 ${this.likeSummary.count}` : `❤️ 点赞 ${this.likeSummary.count}`,
+                    { type: ButtonType.Capsule })
                     .layoutWeight(1)
                     .height(44)
                     .fontSize(15)
-                    .backgroundColor('#FF7A00')
+                    .backgroundColor(this.likeSummary.active ? '#FF4D4F' : '#FF7A00')
                     .fontColor(Color.White)
                     .onClick(() => {
-                      this.showToast('点赞成功');
+                      this.handleToggleLike();
                     })
 
-                  Button('⭐ 收藏', { type: ButtonType.Capsule })
+                  Button(this.favoriteSummary.active ? `⭐ 已藏 ${this.favoriteSummary.count}` : `⭐ 收藏 ${this.favoriteSummary.count}`,
+                    { type: ButtonType.Capsule })
                     .layoutWeight(1)
                     .height(44)
                     .fontSize(15)
-                    .backgroundColor('#18A058')
+                    .backgroundColor(this.favoriteSummary.active ? '#0E7A3E' : '#18A058')
                     .fontColor(Color.White)
                     .onClick(() => {
-                      this.showToast('收藏成功');
+                      this.handleToggleFavorite();
                     })
                 }
                 .width('100%')
+
+                Button('📷 上传参观照片', { type: ButtonType.Capsule })
+                  .width('100%')
+                  .height(44)
+                  .fontSize(15)
+                  .backgroundColor('#5B6CFF')
+                  .fontColor(Color.White)
+                  .enabled(!this.isUploadingPhoto)
+                  .onClick(() => {
+                    this.handleUploadPhoto();
+                  })
               }
               .width('100%')
               .margin({ top: 20 })
 
-              // 评论区占位
-              Column() {
-                Text('评论区')
-                  .fontSize(18)
-                  .fontWeight(FontWeight.Bold)
-                  .alignSelf(ItemAlign.Start)
-                Text('评论功能开发中...')
-                  .fontSize(14)
-                  .fontColor('#999999')
-                  .margin({ top: 8 })
-              }
-              .width('100%')
-              .alignItems(HorizontalAlign.Start)
-              .margin({ bottom: 20 })
+              this.CommentSection()
             }
             .padding(16)
             .alignItems(HorizontalAlign.Center)
@@ -148,7 +185,6 @@ export struct ArtifactDetailPage {
         }
         .scrollBar(BarState.Auto)
       } else {
-        // 文物不存在的情况
         Column() {
           Text('未找到该文物')
             .fontSize(20)
@@ -171,6 +207,91 @@ export struct ArtifactDetailPage {
   }
 
   @Builder
+  CommentSection() {
+    Column() {
+      Text(`评论区（${this.comments.length}）`)
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .alignSelf(ItemAlign.Start)
+        .margin({ bottom: 12 })
+
+      if (this.comments.length === 0) {
+        Text('暂无评论，快来抢沙发')
+          .fontSize(14)
+          .fontColor('#999999')
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: 12 })
+      } else {
+        Column({ space: 10 }) {
+          ForEach(this.comments, (item: CommentItem) => {
+            this.CommentItemView(item)
+          }, (item: CommentItem) => item.id)
+        }
+        .width('100%')
+        .margin({ bottom: 16 })
+      }
+
+      Row({ space: 8 }) {
+        TextInput({ placeholder: '写下你的看法…', text: this.commentInput })
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .onChange((value: string) => {
+            this.commentInput = value;
+          })
+
+        Button('发表')
+          .height(44)
+          .fontSize(14)
+          .backgroundColor('#007AFF')
+          .fontColor(Color.White)
+          .enabled(!this.isSubmittingComment)
+          .onClick(() => {
+            this.handleSubmitComment();
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .margin({ top: 24, bottom: 20 })
+  }
+
+  @Builder
+  CommentItemView(item: CommentItem) {
+    Column() {
+      Row() {
+        Text(item.username)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+        Blank()
+        Text(formatReviewStatus(item.status))
+          .fontSize(12)
+          .fontColor(formatReviewColor(item.status))
+      }
+      .width('100%')
+
+      Text(item.content)
+        .fontSize(15)
+        .lineHeight(22)
+        .margin({ top: 6 })
+        .width('100%')
+
+      Text(formatDateTime(item.createdAt))
+        .fontSize(12)
+        .fontColor('#999999')
+        .margin({ top: 6 })
+        .alignSelf(ItemAlign.End)
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(10)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
   InfoChip(label: string, value: string) {
     Column() {
       Text(label).fontSize(12).fontColor('#999999')
@@ -178,11 +299,90 @@ export struct ArtifactDetailPage {
     }
   }
 
+  private async handleToggleLike() {
+    if (!this.artifact) {
+      return;
+    }
+    if (!this.isLogin || !this.username) {
+      this.showToast('请先登录后再点赞');
+      router.pushUrl({ url: 'pages/LoginPage' });
+      return;
+    }
+    const actor = this.resolveActor();
+    this.likeSummary = await interactionStore.toggleLike(this.artifact.id, actor);
+    this.showToast(this.likeSummary.active ? '已点赞' : '已取消点赞');
+  }
+
+  private async handleToggleFavorite() {
+    if (!this.artifact) {
+      return;
+    }
+    if (!this.isLogin || !this.username) {
+      this.showToast('请先登录后再收藏');
+      router.pushUrl({ url: 'pages/LoginPage' });
+      return;
+    }
+    const actor = this.resolveActor();
+    this.favoriteSummary = await interactionStore.toggleFavorite(this.artifact, actor);
+    this.showToast(this.favoriteSummary.active ? '已加入收藏夹' : '已取消收藏');
+  }
+
+  private async handleSubmitComment() {
+    if (!this.artifact) {
+      return;
+    }
+    if (!this.isLogin || !this.username) {
+      this.showToast('请先登录后再评论');
+      router.pushUrl({ url: 'pages/LoginPage' });
+      return;
+    }
+    if (this.isSubmittingComment) {
+      return;
+    }
+    this.isSubmittingComment = true;
+    const result = await interactionStore.addComment(this.artifact, this.username, this.commentInput);
+    this.isSubmittingComment = false;
+    if (result.ok) {
+      this.commentInput = '';
+      this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id);
+    }
+    this.showToast(result.message);
+  }
+
+  private async handleUploadPhoto() {
+    if (!this.artifact) {
+      return;
+    }
+    if (!this.isLogin || !this.username) {
+      this.showToast('请先登录后再上传照片');
+      router.pushUrl({ url: 'pages/LoginPage' });
+      return;
+    }
+    if (this.isUploadingPhoto) {
+      return;
+    }
+    this.isUploadingPhoto = true;
+    const imageUri = await pickSingleImageUri();
+    this.isUploadingPhoto = false;
+    if (!imageUri) {
+      return;
+    }
+    await interactionStore.addUpload({
+      artifactId: this.artifact.id,
+      artifactTitle: this.artifact.title,
+      username: this.username,
+      imageUri: imageUri,
+      location: this.artifact.museum,
+      description: '参观打卡'
+    });
+    this.showToast('照片已上传，等待审核');
+  }
+
   private showToast(message: string) {
     try {
       promptAction.showToast({ message: message });
     } catch (error) {
-      console.error('Toast显示失败：' + JSON.stringify(error));
+      console.error('Toast显示失败: ' + JSON.stringify(error));
     }
   }
 }
