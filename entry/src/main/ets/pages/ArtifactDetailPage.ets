@@ -1,4 +1,4 @@
-// ArtifactDetailPage.ets（最终无冲突版）
+
 import router from '@ohos.router';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import promptAction from '@ohos.promptAction';
