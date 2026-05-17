@@ -32,6 +32,18 @@
         ]
       }
     ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.READ_IMAGEVIDEO",
+        "reason": "$string:read_image_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      }
+    ],
     "extensionAbilities": [
       {
         "name": "EntryBackupAbility",
@@ -43,7 +55,7 @@
             "name": "ohos.extension.backup",
             "resource": "$profile:backup_config"
           }
-        ],
+        ]
       }
     ]
   }
