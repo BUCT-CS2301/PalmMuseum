@@ -1,9 +1,10 @@
-
+// ArtifactDetailPage.ets（最终无冲突版）
 import router from '@ohos.router';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import promptAction from '@ohos.promptAction';
+import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
 
-// 定义关联实体的接口（代替对象字面量）
+// 关联实体接口
 interface RelatedEntity {
   title: string;
   id: string;
@@ -19,13 +20,12 @@ export struct ArtifactDetailPage {
   @State offsetX: number = 0;
   @State offsetY: number = 0;
 
-  @State relatedEntities: RelatedEntity[] = [];   // 使用接口
+  @State relatedEntities: RelatedEntity[] = [];
   @State relatedList: Artifact[] = [];
   @State currentImageIndex: number = 0;
 
   aboutToAppear() {
     const params = router.getParams() as Record<string, string>;
-    // 修正：从 HomePage 传来的参数名是 objectId，不是 id
     if (params && params['objectId']) {
       this.artifactId = params['objectId'];
       const found = mockArtifacts.find(item => item.id === this.artifactId);
@@ -39,12 +39,10 @@ export struct ArtifactDetailPage {
   private loadRelatedData() {
     if (!this.artifact) return;
 
-    // 同朝代关联实体
     this.relatedEntities = mockArtifacts
       .filter(a => a.period === this.artifact!.period && a.id !== this.artifact!.id)
-      .map(a => ({ title: a.title, id: a.id } as RelatedEntity))
+      .map(a => ({ title: a.title, id: a.id } as RelatedEntity));
 
-    // 相关文物推荐（最多4件）
     this.relatedList = mockArtifacts
       .filter(a => a.id !== this.artifact!.id &&
         (a.period === this.artifact!.period || a.type === this.artifact!.type))
@@ -211,21 +209,73 @@ export struct ArtifactDetailPage {
                 .margin({ bottom: 20 })
               }
 
-              // 功能按钮
-              Row() {
-                Button('🔊 语音讲解')
-                  .backgroundColor('#007AFF')
-                  .onClick(() => this.showToast('语音讲解功能开发中'))
-                Button('❤️ 点赞')
-                  .backgroundColor('#FF9500')
-                  .onClick(() => this.showToast('点赞功能开发中'))
-                Button('⭐ 收藏')
-                  .backgroundColor('#28A745')
-                  .onClick(() => this.showToast('收藏功能开发中'))
+              // 功能按钮（融合语音功能）
+              Column({ space: 12 }) {
+                Row({ space: 12 }) {
+                  Button('🎧 语音讲解', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#1677FF')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      if (this.artifact !== null) {
+                        try {
+                          const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
+                          MuseumVoiceService.speak(text);
+                          this.showToast('正在播放语音讲解');
+                        } catch (e) {
+                          this.showToast('语音服务暂不可用');
+                        }
+                      }
+                    })
+
+                  Button('🎙️ 语音问答', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#8E44AD')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      if (this.artifact !== null) {
+                        try {
+                          const question = '这个文物在哪个博物馆';
+                          const answer = MuseumVoiceService.answerQuestion(this.artifact, question);
+                          MuseumVoiceService.speak(answer);
+                          this.showToast(answer);
+                        } catch (e) {
+                          this.showToast('语音问答暂不可用');
+                        }
+                      }
+                    })
+                }
+                .width('100%')
+
+                Row({ space: 12 }) {
+                  Button('❤️ 点赞', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#FF7A00')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      this.showToast('点赞成功');
+                    })
+
+                  Button('⭐ 收藏', { type: ButtonType.Capsule })
+                    .layoutWeight(1)
+                    .height(44)
+                    .fontSize(15)
+                    .backgroundColor('#18A058')
+                    .fontColor(Color.White)
+                    .onClick(() => {
+                      this.showToast('收藏成功');
+                    })
+                }
+                .width('100%')
               }
               .width('100%')
-              .justifyContent(FlexAlign.SpaceAround)
-              .margin({ bottom: 30 })
+              .margin({ top: 20 })
 
               // 评论区占位
               Column() {
