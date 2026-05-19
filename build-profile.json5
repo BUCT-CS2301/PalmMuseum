@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\m1310\\.ohos\\config\\default_PalmMuseum2_pHh78t_Y57mMDHDSgmJETNah8-tMWdhuRDcln28_0II=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BC634099F9A2D34CD8D7FBAA51441D7F3F6F632EFFF20102B9E760560528DCA3F72B4FA58B98DE5",
+          "profile": "C:\\Users\\m1310\\.ohos\\config\\default_PalmMuseum2_pHh78t_Y57mMDHDSgmJETNah8-tMWdhuRDcln28_0II=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\m1310\\.ohos\\config\\default_PalmMuseum2_pHh78t_Y57mMDHDSgmJETNah8-tMWdhuRDcln28_0II=.p12",
+          "storePassword": "0000001B935898415C140963B3D8FF5AF9923CB01EE173E1D19970506F0144C37DB2D65DAE3E769EA7E161"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",

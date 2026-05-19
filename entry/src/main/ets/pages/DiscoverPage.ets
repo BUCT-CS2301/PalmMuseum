@@ -4,10 +4,12 @@ import picker from '@ohos.file.picker';
 import common from '@ohos.app.ability.common';
 import abilityAccessCtrl, { Permissions } from '@ohos.abilityAccessCtrl';
 import router from '@ohos.router';
-
-/**
- * 文物条目类型定义
- */
+import { cameraPicker } from '@kit.CameraKit';
+import { camera } from '@kit.CameraKit';
+import fs from '@ohos.file.fs';
+import http from '@ohos.net.http';
+import util from '@ohos.util';
+// 文物条目类型（与后端约定）
 interface ArtifactItem {
   id: number;
   name: string;
@@ -16,17 +18,19 @@ interface ArtifactItem {
   similarity: number;
 }
 
-/**
- * 路由参数类型
- */
+// 后端响应结构
+interface SearchResponse {
+  code: number;
+  message?: string;
+  data: ArtifactItem[];
+}
+
+// 路由参数
 interface RouterParams {
   image: string;
   results: string;
 }
 
-/**
- * 路由配置类型
- */
 interface RouterOptions {
   url: string;
   params: RouterParams;
@@ -35,59 +39,25 @@ interface RouterOptions {
 @Entry
 @Component
 export struct DiscoverPage {
-  // 搜索输入
   @State searchInput: string = '';
-  // 语音识别文本
   @State voiceText: string = '';
-  // 选中的图片
   @State selectedImage: string = '';
+  @State isSearching: boolean = false;
 
-  // 模拟文物数据
-  private readonly mockArtifacts: ArtifactItem[] = [
-    {
-      id: 1,
-      name: '青花瓷瓶',
-      era: '明代',
-      image: 'https://img2.baidu.com/it/u=3871232861,3188699794&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 2,
-      name: '唐三彩马',
-      era: '唐代',
-      image: 'https://img2.baidu.com/it/u=3103356365,1527751139&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 3,
-      name: '玉琮',
-      era: '良渚文化',
-      image: 'https://img1.baidu.com/it/u=1679148656,2910535149&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 4,
-      name: '青铜鼎',
-      era: '商代',
-      image: 'https://img0.baidu.com/it/u=4119932281,1072797093&fm=253&fmt=auto',
-      similarity: 0
-    }
-  ];
+  private readonly SEARCH_API_URL: string = 'http://192.168.1.100:8080/api/image-search'; // 替换为实际地址
 
-  /**
-   * 统一申请权限
-   */
+  async aboutToAppear() {}
+
+  // ==================== 权限申请 ====================
   async requestPermissions(): Promise<boolean> {
     const atManager = abilityAccessCtrl.createAtManager();
     const permissions: Array<Permissions> = ['ohos.permission.CAMERA', 'ohos.permission.READ_MEDIA'];
     const context = getContext(this) as common.UIAbilityContext;
-
     try {
       const result = await atManager.requestPermissionsFromUser(context, permissions);
       const isAllGranted = result.authResults.every(item => item === 0);
-
       if (!isAllGranted) {
-        promptAction.showToast({ message: '权限被拒绝' });
+        promptAction.showToast({ message: '权限被拒绝，部分功能无法使用' });
       }
       return isAllGranted;
     } catch (err) {
@@ -96,93 +66,137 @@ export struct DiscoverPage {
     }
   }
 
-  /**
-   * 拍照搜索
-   */
+  // ==================== 拍照搜索 ====================
   async openCamera() {
+    if (this.isSearching) {
+      promptAction.showToast({ message: '正在搜索中，请稍后' });
+      return;
+    }
     if (!await this.requestPermissions()) return;
 
     try {
-      this.selectedImage = 'camera_mock_image';
-      promptAction.showToast({ message: '拍照成功' });
-      this.startImageSearch();
+      const pickerProfile: cameraPicker.PickerProfile = {
+        cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK,
+      };
+      const pickerResult: cameraPicker.PickerResult = await cameraPicker.pick(
+        getContext(this),
+        [cameraPicker.PickerMediaType.PHOTO],
+        pickerProfile
+      );
+      if (pickerResult.resultCode === 0 && pickerResult.resultUri) {
+        this.selectedImage = pickerResult.resultUri;
+        await this.uploadAndSearchViaBase64(this.selectedImage);
+      } else {
+        promptAction.showToast({ message: '未获取到照片' });
+      }
     } catch (err) {
+      console.error(`拍照失败: ${err}`);
       promptAction.showToast({ message: '打开相机失败' });
     }
   }
 
-  /**
-   * 相册选择图片
-   */
+  // ==================== 相册选择图片 ====================
   async openAlbum() {
+    if (this.isSearching) {
+      promptAction.showToast({ message: '正在搜索中，请稍后' });
+      return;
+    }
     if (!await this.requestPermissions()) return;
 
     try {
       const photoPicker = new picker.PhotoViewPicker();
-      const result = await photoPicker.select({
+      const result: picker.PhotoSelectResult = await photoPicker.select({
         MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE,
         maxSelectNumber: 1
       });
-
       if (result.photoUris.length > 0) {
         this.selectedImage = result.photoUris[0];
-        promptAction.showToast({ message: '图片选择成功' });
-        this.startImageSearch();
+        await this.uploadAndSearchViaBase64(this.selectedImage);
       }
     } catch (err) {
       promptAction.showToast({ message: '选择图片失败' });
     }
   }
 
-  /**
-   * 模拟以图搜图逻辑
-   */
-  startImageSearch() {
-    const resultList: ArtifactItem[] = [];
+  // ==================== 辅助函数：ArrayBuffer → Base64 ====================
+  private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    // 创建一个 Base64Helper 实例
+    const base64Helper = new util.Base64Helper();
+    // 将 ArrayBuffer 转为 Uint8Array
+    const uint8Array = new Uint8Array(buffer);
+    // 使用原生方法编码，性能更好，也符合 ArkTS 规范
+    return base64Helper.encodeToStringSync(uint8Array);
+  }
 
-    for (let i = 0; i < 3; i++) {
-      const item = this.mockArtifacts[i];
-      const resultItem: ArtifactItem = {
-        id: item.id,
-        name: item.name,
-        era: item.era,
-        image: item.image,
-        similarity: Math.floor(Math.random() * 36) + 60
-      };
-      resultList.push(resultItem);
+  // ==================== 图片上传并检索 ====================
+  async uploadAndSearchViaBase64(imageUri: string) {
+    this.isSearching = true;
+    promptAction.showToast({ message: '处理图片中...' });
+
+    try {
+      const file = fs.openSync(imageUri, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(file.fd);
+      const buffer = new ArrayBuffer(stat.size);
+      fs.readSync(file.fd, buffer);
+      fs.closeSync(file);
+
+      const base64Image = this.arrayBufferToBase64(buffer);
+
+      const httpRequest = http.createHttp();
+      const response = await httpRequest.request(this.SEARCH_API_URL, {
+        method: http.RequestMethod.POST,
+        header: { 'Content-Type': 'application/json' },
+        extraData: JSON.stringify({ image: base64Image, filename: 'upload.jpg' }),
+        connectTimeout: 30000,
+        readTimeout: 30000
+      });
+      httpRequest.destroy();
+
+      if (response.responseCode === 200) {
+        // 明确指定 JSON 解析结果的类型
+        const result: SearchResponse = JSON.parse(response.result as string);
+        if (result.code === 0 && result.data) {
+          const sortedResults = result.data.sort((a, b) => b.similarity - a.similarity);
+          this.navigateToResultPage(imageUri, sortedResults);
+        } else {
+          promptAction.showToast({ message: result.message || '未找到相似文物' });
+        }
+      } else {
+        promptAction.showToast({ message: `请求失败: ${response.responseCode}` });
+      }
+    } catch (err) {
+      console.error(`图片上传检索失败: `,JSON.stringify(err));
+      promptAction.showToast({ message: '网络错误，请检查网络后重试' });
+    } finally {
+      this.isSearching = false;
     }
+  }
 
+  private navigateToResultPage(userImageUri: string, results: ArtifactItem[]) {
     const routerOptions: RouterOptions = {
       url: 'pages/ImageSearchResultPage',
       params: {
-        image: this.selectedImage,
-        results: JSON.stringify(resultList)
+        image: userImageUri,
+        results: JSON.stringify(results)
       }
     };
-
     router.pushUrl(routerOptions);
   }
 
+  // ==================== UI 构建 ====================
   build() {
     Column() {
-      // 页面标题（整体上移）
       Column({ space: 4 }) {
         Text('发现')
           .fontSize(30)
           .fontWeight(FontWeight.Bold)
           .fontColor('#111827');
-
-
       }
       .margin({ top: 20, bottom: 16 });
 
-      // 语音搜索卡片
       this.voiceSearchCard();
-
-      // 以图搜图卡片
       this.imageSearchCard();
-
-      Blank()
+      Blank();
     }
     .width('100%')
     .height('100%')
@@ -190,19 +204,14 @@ export struct DiscoverPage {
     .alignItems(HorizontalAlign.Center);
   }
 
-  /**
-   * 语音搜索模块（标题与按钮同行，与以图搜图严格对齐）
-   */
   @Builder
   voiceSearchCard() {
     Column({ space: 16 }) {
-      // 标题行：语音搜索 + 语音提示（与以图搜图标题完全对齐）
       Row() {
         Text('语音搜索')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor('#111827');
-
         Button('🎧 语音提示')
           .width(92)
           .height(32)
@@ -230,7 +239,7 @@ export struct DiscoverPage {
         .border({ width: 1, color: '#D1D5DB' })
         .borderRadius(12)
         .padding({ left: 16 })
-        .onChange(value => this.searchInput = value);
+        .onChange((value: string) => this.searchInput = value);
 
       Button('🎙️ 开始语音搜索')
         .width('100%')
@@ -261,13 +270,9 @@ export struct DiscoverPage {
     .shadow({ radius: 6, color: '#0000000A', offsetX: 0, offsetY: 2 });
   }
 
-  /**
-   * 以图搜图模块（与语音搜索严格左对齐）
-   */
   @Builder
   imageSearchCard() {
     Column({ space: 16 }) {
-      // 标题行：与上方语音搜索标题完全对齐
       Text('以图搜图')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
@@ -279,6 +284,7 @@ export struct DiscoverPage {
         .height(54)
         .backgroundColor('#F97316')
         .borderRadius(12)
+        .enabled(!this.isSearching)
         .onClick(async () => await this.openCamera());
 
       Button('🖼️ 从相册选择图片')
@@ -286,10 +292,16 @@ export struct DiscoverPage {
         .height(54)
         .backgroundColor('#8B5CF6')
         .borderRadius(12)
+        .enabled(!this.isSearching)
         .onClick(async () => await this.openAlbum());
 
-      if (this.selectedImage) {
-        Text('✅ 已选择图片')
+      if (this.isSearching) {
+        Text('⏳ 正在识别文物，请稍候...')
+          .fontSize(14)
+          .fontColor('#059669')
+          .alignSelf(ItemAlign.Start);
+      } else if (this.selectedImage && !this.isSearching) {
+        Text('✅ 已选择图片，识别完成')
           .fontSize(14)
           .fontColor('#059669')
           .alignSelf(ItemAlign.Start);
