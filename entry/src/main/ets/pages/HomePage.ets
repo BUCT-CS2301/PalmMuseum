@@ -1,4 +1,4 @@
-// HomePage.ets（敦煌色系 + 图标优化）
+// HomePage.ets（敦煌色系 + 优化）
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
 import router from '@ohos.router';
 
@@ -76,6 +76,13 @@ export struct HomePage {
     }
     return ['全部', ...Array.from(set)];
   }
+  private chunkArray(arr: Artifact[], size: number): Artifact[][] {
+    const result: Artifact[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      result.push(arr.slice(i, i + size));
+    }
+    return result;
+  }
 
   private readonly periodOrderMap: Map<string, number> = new Map([
     ['良渚文化', 1], ['新石器时代', 1], ['仰韶文化', 1],
@@ -149,9 +156,10 @@ export struct HomePage {
           .fontSize(24)
           .margin({ right: 6 })
         Text('掌上博物馆')
-          .fontSize(22)
+          .fontSize(26)
           .fontWeight(FontWeight.Bold)
           .fontColor('#3A3A3A')
+          .fontFamily('myCustomFont')   // 更换字体
         Blank()
         Text(this.viewMode === 0 ? '📱' : '📋')
           .fontSize(20)
@@ -307,7 +315,7 @@ export struct HomePage {
       .backgroundColor('#FFFFFF')
       .border({ width: { bottom: 0.5 }, color: '#E0D5C6' })
 
-      // ===== 内容区域（含空状态） =====
+      // ===== 内容区域（含空状态）+ 列表末尾加载按钮 =====
       if (this.displayList.length === 0) {
         // 空状态提示
         Column() {
@@ -328,47 +336,114 @@ export struct HomePage {
         .justifyContent(FlexAlign.Center)
         .backgroundColor('#F5F0E8')
       } else if (this.viewMode === 0) {
-        Grid() {
-          ForEach(this.displayList, (item: Artifact) => {
-            GridItem() {
-              this.CardView(item)
+        // ===== 网格模式（List 内自定义两列） =====
+        List() {
+          ForEach(this.chunkArray(this.displayList, 2), (row: Artifact[]) => {
+            ListItem() {
+              Row() {
+                ForEach(row, (item: Artifact) => {
+                  Column() {
+                    this.CardView(item)
+                  }
+                  .layoutWeight(1)   // 每个卡片等分宽度
+                  .margin(4)         // 卡片之间及四周的间距
+                }, (item: Artifact) => item.id)
+                // 如果此行只有一个卡片，右侧留空占位
+                if (row.length < 2) {
+                  Column().layoutWeight(1).margin(4)
+                }
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Start)
             }
-          }, (item: Artifact) => item.id)
+            .width('100%')
+            .margin({ left: 0, right: 0 })  // 去掉水平外边距，改用 Row 内部 margin 控制
+          }, (row: Artifact[]) => `${row[0].id}_${row.length}`)
+
+          // 列表末尾：加载更多 / 已经到底（独占一行）
+          if (this.hasMore) {
+            ListItem() {
+              Row() {
+                Button('加载更多 ▼')
+                  .width('60%')
+                  .height(40)
+                  .fontSize(14)
+                  .backgroundColor('#FFFFFF')
+                  .fontColor('#C05040')
+                  .border({ width: 1, color: '#C05040' })
+                  .borderRadius(20)
+                  .onClick(() => this.loadMore())
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+            }
+            .width('100%')
+            .margin({ top: 8, bottom: 8 })
+          } else if (this.displayList.length > 0) {
+            ListItem() {
+              Text('已经到底了')
+                .fontSize(12)
+                .fontColor('#8B7355')
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
+            .width('100%')
+            .margin({ top: 8, bottom: 8 })
+          }
         }
-        .columnsTemplate('1fr 1fr').columnsGap(8).rowsGap(8).padding(8)
-        .width('100%').layoutWeight(1)
+        .width('100%')
+        .layoutWeight(1)
         .backgroundColor('#F5F0E8')
+        .padding(4)   // 四周留白，与卡片的 margin 配合形成 8px 间距
+        .divider(null)
       } else {
+        // ===== 列表模式（原有单列布局） =====
         List() {
           ForEach(this.displayList, (item: Artifact) => {
             ListItem() {
               this.ListView(item)
             }
+            .margin({ top: 2, bottom: 2 })
           }, (item: Artifact) => item.id)
+
+          if (this.hasMore) {
+            ListItem() {
+              Row() {
+                Button('加载更多 ▼')
+                  .width('60%')
+                  .height(40)
+                  .fontSize(14)
+                  .backgroundColor('#FFFFFF')
+                  .fontColor('#C05040')
+                  .border({ width: 1, color: '#C05040' })
+                  .borderRadius(20)
+                  .onClick(() => this.loadMore())
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+            }
+            .width('100%')
+            .margin({ top: 8, bottom: 8 })
+          } else if (this.displayList.length > 0) {
+            ListItem() {
+              Text('已经到底了')
+                .fontSize(12)
+                .fontColor('#8B7355')
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
+            .width('100%')
+            .margin({ top: 8, bottom: 8 })
+          }
         }
-        .width('100%').layoutWeight(1)
+        .width('100%')
+        .layoutWeight(1)
         .backgroundColor('#F5F0E8')
-        .padding(8)
+        .padding({ left: 8, right: 8, top: 0, bottom: 0 })
+        .divider(null)
       }
 
-      // ===== 分页按钮 =====
-      if (this.hasMore) {
-        Button('加载更多 ▼ ')
-          .width('100%')
-          .height(40)
-          .fontSize(14)
-          .backgroundColor('#FFFFFF')
-          .fontColor('#C05040')
-          .border({ width: 1, color: '#C05040' })
-          .borderRadius(20)
-          .margin({ left: 12, right: 12, top: 8, bottom: 8 })
-          .onClick(() => this.loadMore())
-      } else if (this.displayList.length > 0) {
-        Text('已经到底了')
-          .fontSize(12)
-          .fontColor('#8B7355')
-          .margin({ top: 8, bottom: 8 })
-      }
+
     }
     .width('100%').height('100%')
     .backgroundColor('#F5F0E8')
@@ -438,7 +513,6 @@ export struct HomePage {
     .padding(12)
     .backgroundColor('#FFFFFF')
     .borderRadius(8)
-    .margin({ bottom: 4 })
     .shadow({ radius: 4, color: '#15000000', offsetY: 2 })
     .onClick(() => {
       router.pushUrl({ url: 'pages/ArtifactDetailPage', params: { objectId: item.id } });
