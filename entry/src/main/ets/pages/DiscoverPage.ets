@@ -37,8 +37,10 @@ interface RouterOptions {
 export struct DiscoverPage {
   // 搜索输入
   @State searchInput: string = '';
+
   // 语音识别文本
   @State voiceText: string = '';
+
   // 选中的图片
   @State selectedImage: string = '';
 
@@ -75,20 +77,25 @@ export struct DiscoverPage {
   ];
 
   /**
-   * 统一申请权限
+   * 申请拍照 / 相册权限
    */
-  async requestPermissions(): Promise<boolean> {
+  async requestImagePermissions(): Promise<boolean> {
     const atManager = abilityAccessCtrl.createAtManager();
-    const permissions: Array<Permissions> = ['ohos.permission.CAMERA', 'ohos.permission.READ_MEDIA'];
+    const permissions: Array<Permissions> = [
+      'ohos.permission.CAMERA',
+      'ohos.permission.READ_MEDIA'
+    ];
+
     const context = getContext(this) as common.UIAbilityContext;
 
     try {
       const result = await atManager.requestPermissionsFromUser(context, permissions);
-      const isAllGranted = result.authResults.every(item => item === 0);
+      const isAllGranted = result.authResults.every((item: number) => item === 0);
 
       if (!isAllGranted) {
-        promptAction.showToast({ message: '权限被拒绝' });
+        promptAction.showToast({ message: '拍照或相册权限被拒绝' });
       }
+
       return isAllGranted;
     } catch (err) {
       promptAction.showToast({ message: '权限申请失败' });
@@ -97,10 +104,38 @@ export struct DiscoverPage {
   }
 
   /**
+   * 申请麦克风权限，用于语音搜索
+   */
+  async requestMicrophonePermission(): Promise<boolean> {
+    const atManager = abilityAccessCtrl.createAtManager();
+    const permissions: Array<Permissions> = [
+      'ohos.permission.MICROPHONE'
+    ];
+
+    const context = getContext(this) as common.UIAbilityContext;
+
+    try {
+      const result = await atManager.requestPermissionsFromUser(context, permissions);
+      const isGranted = result.authResults.every((item: number) => item === 0);
+
+      if (!isGranted) {
+        promptAction.showToast({ message: '麦克风权限被拒绝，无法使用语音搜索' });
+      }
+
+      return isGranted;
+    } catch (err) {
+      promptAction.showToast({ message: '麦克风权限申请失败' });
+      return false;
+    }
+  }
+
+  /**
    * 拍照搜索
    */
-  async openCamera() {
-    if (!await this.requestPermissions()) return;
+  async openCamera(): Promise<void> {
+    if (!await this.requestImagePermissions()) {
+      return;
+    }
 
     try {
       this.selectedImage = 'camera_mock_image';
@@ -114,8 +149,10 @@ export struct DiscoverPage {
   /**
    * 相册选择图片
    */
-  async openAlbum() {
-    if (!await this.requestPermissions()) return;
+  async openAlbum(): Promise<void> {
+    if (!await this.requestImagePermissions()) {
+      return;
+    }
 
     try {
       const photoPicker = new picker.PhotoViewPicker();
@@ -137,11 +174,12 @@ export struct DiscoverPage {
   /**
    * 模拟以图搜图逻辑
    */
-  startImageSearch() {
+  startImageSearch(): void {
     const resultList: ArtifactItem[] = [];
 
     for (let i = 0; i < 3; i++) {
       const item = this.mockArtifacts[i];
+
       const resultItem: ArtifactItem = {
         id: item.id,
         name: item.name,
@@ -149,6 +187,7 @@ export struct DiscoverPage {
         image: item.image,
         similarity: Math.floor(Math.random() * 36) + 60
       };
+
       resultList.push(resultItem);
     }
 
@@ -165,45 +204,41 @@ export struct DiscoverPage {
 
   build() {
     Column() {
-      // 页面标题（整体上移）
       Column({ space: 4 }) {
         Text('发现')
           .fontSize(30)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827');
-
-
+          .fontColor('#111827')
       }
-      .margin({ top: 20, bottom: 16 });
+      .margin({ top: 20, bottom: 16 })
 
       // 语音搜索卡片
-      this.voiceSearchCard();
+      this.voiceSearchCard()
 
       // 以图搜图卡片
-      this.imageSearchCard();
+      this.imageSearchCard()
 
       Blank()
     }
     .width('100%')
     .height('100%')
     .backgroundColor('#F3F4F6')
-    .alignItems(HorizontalAlign.Center);
+    .alignItems(HorizontalAlign.Center)
   }
 
   /**
-   * 语音搜索模块（标题与按钮同行，与以图搜图严格对齐）
+   * 语音搜索模块
    */
   @Builder
   voiceSearchCard() {
     Column({ space: 16 }) {
-      // 标题行：语音搜索 + 语音提示（与以图搜图标题完全对齐）
       Row() {
         Text('语音搜索')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827');
+          .fontColor('#111827')
 
-        Button('🎧 语音提示')
+        Button('语音提示')
           .width(92)
           .height(32)
           .fontSize(12)
@@ -212,16 +247,18 @@ export struct DiscoverPage {
           .borderRadius(16)
           .margin({ left: 12 })
           .onClick(() => {
-            MuseumVoiceService.speak('欢迎使用掌上博物馆语音搜索，请说出你想查找的文物名称、年代、类型或博物馆名称。');
-          });
+            MuseumVoiceService.speak(
+              '欢迎使用掌上博物馆语音搜索，请说出你想查找的文物名称、年代、类型或博物馆名称。'
+            );
+          })
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center);
+      .alignItems(VerticalAlign.Center)
 
       Text('支持关键词：青花、唐三彩、玉琮、青铜、大英博物馆')
         .fontSize(13)
         .fontColor('#9CA3AF')
-        .alignSelf(ItemAlign.Start);
+        .alignSelf(ItemAlign.Start)
 
       TextInput({ placeholder: '请输入或说出文物名称、年代、博物馆...' })
         .width('100%')
@@ -230,69 +267,119 @@ export struct DiscoverPage {
         .border({ width: 1, color: '#D1D5DB' })
         .borderRadius(12)
         .padding({ left: 16 })
-        .onChange(value => this.searchInput = value);
+        .onChange((value: string) => {
+          this.searchInput = value;
+        })
 
-      Button('🎙️ 开始语音搜索')
+      Button('文字搜索')
         .width('100%')
         .height(50)
-        .backgroundColor('#007AFF')
+        .fontSize(16)
+        .backgroundColor('#10B981')
+        .fontColor(Color.White)
         .borderRadius(12)
         .onClick(() => {
           if (!this.searchInput.trim()) {
-            promptAction.showToast({ message: '请输入或说出搜索内容' });
+            promptAction.showToast({ message: '请输入搜索内容' });
             return;
           }
+
           this.voiceText = this.searchInput;
-          MuseumVoiceService.handleVoiceSearch(this.voiceText);
-        });
+          MuseumVoiceService.handleVoiceSearch(this.searchInput);
+        })
+
+      Button('开始语音搜索')
+        .width('100%')
+        .height(50)
+        .fontSize(16)
+        .backgroundColor('#007AFF')
+        .fontColor(Color.White)
+        .borderRadius(12)
+        .onClick(async () => {
+          const hasPermission = await this.requestMicrophonePermission();
+
+          if (!hasPermission) {
+            return;
+          }
+
+          promptAction.showToast({ message: '请说出文物关键词' });
+
+          MuseumVoiceService.startVoiceSearch((text: string) => {
+            this.voiceText = text;
+            this.searchInput = text;
+          });
+        })
+
+      Button('结束语音识别')
+        .width('100%')
+        .height(50)
+        .fontSize(16)
+        .backgroundColor('#F97316')
+        .fontColor(Color.White)
+        .borderRadius(12)
+        .onClick(() => {
+          MuseumVoiceService.finishVoiceSearch();
+        })
 
       if (this.voiceText) {
-        Text(`✅ 识别结果：${this.voiceText}`)
+        Text(`识别 / 搜索结果：${this.voiceText}`)
           .fontSize(15)
           .fontColor('#059669')
           .alignSelf(ItemAlign.Start)
-          .margin({ top: 4 });
+          .margin({ top: 4 })
       }
     }
     .width('92%')
     .padding(20)
     .backgroundColor('#FFFFFF')
     .borderRadius(18)
-    .shadow({ radius: 6, color: '#0000000A', offsetX: 0, offsetY: 2 });
+    .shadow({
+      radius: 6,
+      color: '#0000000A',
+      offsetX: 0,
+      offsetY: 2
+    })
   }
 
   /**
-   * 以图搜图模块（与语音搜索严格左对齐）
+   * 以图搜图模块
    */
   @Builder
   imageSearchCard() {
     Column({ space: 16 }) {
-      // 标题行：与上方语音搜索标题完全对齐
       Text('以图搜图')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor('#111827')
-        .alignSelf(ItemAlign.Start);
+        .alignSelf(ItemAlign.Start)
 
-      Button('📷 拍照搜索文物')
+      Button('拍照搜索文物')
         .width('100%')
         .height(54)
+        .fontSize(16)
         .backgroundColor('#F97316')
+        .fontColor(Color.White)
         .borderRadius(12)
-        .onClick(async () => await this.openCamera());
+        .onClick(async () => {
+          await this.openCamera();
+        })
 
-      Button('🖼️ 从相册选择图片')
+      Button('从相册选择图片')
         .width('100%')
         .height(54)
+        .fontSize(16)
         .backgroundColor('#8B5CF6')
+        .fontColor(Color.White)
         .borderRadius(12)
-        .onClick(async () => await this.openAlbum());
+        .onClick(async () => {
+          await this.openAlbum();
+        })
 
       if (this.selectedImage) {
-        Text('✅ 已选择图片')
+        Text('已选择图片')
           .fontSize(14)
           .fontColor('#059669')
-          .alignSelf(ItemAlign.Start);
+          .alignSelf(ItemAlign.Start)
       }
     }
     .width('92%')
@@ -300,6 +387,11 @@ export struct DiscoverPage {
     .backgroundColor('#FFFFFF')
     .borderRadius(18)
     .margin({ top: 16 })
-    .shadow({ radius: 6, color: '#0000000A', offsetX: 0, offsetY: 2 });
+    .shadow({
+      radius: 6,
+      color: '#0000000A',
+      offsetX: 0,
+      offsetY: 2
+    })
   }
 }
