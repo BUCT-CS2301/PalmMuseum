@@ -45,6 +45,8 @@ export struct ArtifactDetailPage {
   @State relatedList: Artifact[] = [];
   @State currentImageIndex: number = 0;
   @State allImageUrls: string[] = [];
+  @State currentVoiceSpeed: number = 1;
+  @State voiceProgressText: string = '0 / 0';
 
   aboutToAppear() {
     this.clearReviewRefreshTimer();
@@ -386,12 +388,13 @@ export struct ArtifactDetailPage {
           .fontSize(15)
           .backgroundColor('#1677FF')
           .fontColor(Color.White)
-          .onClick(() => {
+          .onClick(async () => {
             if (this.artifact !== null) {
               try {
                 const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
-                MuseumVoiceService.speak(text);
-                this.showToast('正在播放语音讲解');
+                await MuseumVoiceService.speak(text, this.currentVoiceSpeed);
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
+                this.showToast(`正在以 ${this.currentVoiceSpeed}x 播放语音讲解`);
               } catch (error) {
                 this.showToast('语音服务暂不可用');
               }
@@ -404,11 +407,12 @@ export struct ArtifactDetailPage {
           .fontSize(15)
           .backgroundColor('#8E44AD')
           .fontColor(Color.White)
-          .onClick(() => {
+          .onClick(async () => {
             if (this.artifact !== null) {
               try {
                 const answer = MuseumVoiceService.answerQuestion(this.artifact, '这个文物收藏在哪个博物馆');
-                MuseumVoiceService.speak(answer);
+                await MuseumVoiceService.speak(answer, this.currentVoiceSpeed);
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
                 this.showToast(answer);
               } catch (error) {
                 this.showToast('语音问答暂不可用');
@@ -418,9 +422,120 @@ export struct ArtifactDetailPage {
       }
       .width('100%')
 
+      Column({ space: 10 }) {
+        Text('语音播放控制')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .alignSelf(ItemAlign.Start)
+
+        Row({ space: 8 }) {
+          Button('0.75x')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .backgroundColor(this.currentVoiceSpeed === 0.75 ? '#1677FF' : '#E8F0FE')
+            .fontColor(this.currentVoiceSpeed === 0.75 ? Color.White : '#1677FF')
+            .onClick(() => {
+              this.currentVoiceSpeed = 0.75;
+              MuseumVoiceService.setSpeed(0.75);
+            })
+
+          Button('1x')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .backgroundColor(this.currentVoiceSpeed === 1 ? '#1677FF' : '#E8F0FE')
+            .fontColor(this.currentVoiceSpeed === 1 ? Color.White : '#1677FF')
+            .onClick(() => {
+              this.currentVoiceSpeed = 1;
+              MuseumVoiceService.setSpeed(1);
+            })
+
+          Button('1.25x')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .backgroundColor(this.currentVoiceSpeed === 1.25 ? '#1677FF' : '#E8F0FE')
+            .fontColor(this.currentVoiceSpeed === 1.25 ? Color.White : '#1677FF')
+            .onClick(() => {
+              this.currentVoiceSpeed = 1.25;
+              MuseumVoiceService.setSpeed(1.25);
+            })
+
+          Button('1.5x')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .backgroundColor(this.currentVoiceSpeed === 1.5 ? '#1677FF' : '#E8F0FE')
+            .fontColor(this.currentVoiceSpeed === 1.5 ? Color.White : '#1677FF')
+            .onClick(() => {
+              this.currentVoiceSpeed = 1.5;
+              MuseumVoiceService.setSpeed(1.5);
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Button('上一段')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#EEF1FF')
+            .fontColor('#5B6CFF')
+            .onClick(() => {
+              MuseumVoiceService.previousParagraph();
+              this.voiceProgressText = MuseumVoiceService.getProgressText();
+            })
+
+          Button('下一段')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#EEF1FF')
+            .fontColor('#5B6CFF')
+            .onClick(() => {
+              MuseumVoiceService.nextParagraph();
+              this.voiceProgressText = MuseumVoiceService.getProgressText();
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Button('停止')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#FF4D4F')
+            .fontColor(Color.White)
+            .onClick(() => {
+              MuseumVoiceService.stop();
+            })
+
+          Button('重播')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#18A058')
+            .fontColor(Color.White)
+            .onClick(() => {
+              MuseumVoiceService.replay();
+              this.voiceProgressText = MuseumVoiceService.getProgressText();
+            })
+        }
+        .width('100%')
+
+        Text(`当前段落：${this.voiceProgressText}`)
+          .fontSize(13)
+          .fontColor('#666666')
+          .alignSelf(ItemAlign.Start)
+      }
+      .width('100%')
+      .padding(12)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(12)
+
       Row({ space: 12 }) {
-        Button(this.likeSummary.active ? `已赞 ${this.likeSummary.count}` : `点赞 ${this.likeSummary.count}`,
-          { type: ButtonType.Capsule })
+        Button(this.likeSummary.active ? `已赞 ${this.likeSummary.count}` : `点赞 ${this.likeSummary.count}`, { type: ButtonType.Capsule })
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
@@ -430,8 +545,7 @@ export struct ArtifactDetailPage {
             this.handleToggleLike();
           })
 
-        Button(this.favoriteSummary.active ? `已藏 ${this.favoriteSummary.count}` : `收藏 ${this.favoriteSummary.count}`,
-          { type: ButtonType.Capsule })
+        Button(this.favoriteSummary.active ? `已藏 ${this.favoriteSummary.count}` : `收藏 ${this.favoriteSummary.count}`, { type: ButtonType.Capsule })
           .layoutWeight(1)
           .height(44)
           .fontSize(15)

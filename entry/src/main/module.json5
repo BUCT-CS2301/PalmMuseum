@@ -5,7 +5,8 @@
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
     "deviceTypes": [
-      "phone", "tablet"
+      "phone",
+      "tablet"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
@@ -47,7 +48,9 @@
         "name": "ohos.permission.CAMERA",
         "reason": "$string:camera_permission_reason",
         "usedScene": {
-          "abilities": ["EntryAbility"],
+          "abilities": [
+            "EntryAbility"
+          ],
           "when": "inuse"
         }
       },
@@ -55,9 +58,24 @@
         "name": "ohos.permission.READ_MEDIA",
         "reason": "$string:read_media_permission_reason",
         "usedScene": {
-          "abilities": ["EntryAbility"],
+          "abilities": [
+            "EntryAbility"
+          ],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.MICROPHONE",
+        "reason": "$string:microphone_permission_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.INTERNET"
       }
     ],
     "extensionAbilities": [
