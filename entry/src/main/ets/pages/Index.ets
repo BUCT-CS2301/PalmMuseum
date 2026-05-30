@@ -71,7 +71,7 @@ struct Index {
     })
     .scrollable(false)
     .animationDuration(0)
-    .barBackgroundColor('#FFFFFF')
+    .barBackgroundColor('#F5F0E8')             // 改为页面背景色
     .divider({
       strokeWidth: 0.5,
       color: '#E0D5C6'

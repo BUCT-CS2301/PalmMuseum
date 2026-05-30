@@ -67,7 +67,7 @@ export struct MyFavoritesPage {
       }
 
       if (this.isLoading) {
-        LoadingProgress().width(40).height(40).margin({ top: 80 })
+        LoadingProgress().width(40).height(40).margin({ top: 80 }).color('#C05040')
       } else if (this.getFilteredFavorites().length === 0) {
         this.EmptyHint(this.getEmptyHintText())
       } else {
@@ -84,7 +84,7 @@ export struct MyFavoritesPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -92,11 +92,12 @@ export struct MyFavoritesPage {
     Row() {
       Text('<')
         .fontSize(22)
-        .fontColor('#007AFF')
+        .fontColor('#C05040')
         .onClick(() => router.back())
       Text(title)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
       Text(' ')
@@ -105,7 +106,7 @@ export struct MyFavoritesPage {
     .width('100%')
     .height(56)
     .padding({ left: 16, right: 16 })
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -114,8 +115,11 @@ export struct MyFavoritesPage {
       TextInput({ placeholder: '输入新收藏夹名称', text: this.newGroupName })
         .height(40)
         .width('100%')
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
         .backgroundColor('#FFFFFF')
         .borderRadius(10)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => {
           this.newGroupName = value;
         })
@@ -124,7 +128,7 @@ export struct MyFavoritesPage {
         .width('100%')
         .height(40)
         .fontSize(14)
-        .backgroundColor('#18A058')
+        .backgroundColor('#C05040')
         .fontColor(Color.White)
         .onClick(async () => {
           if (!this.username) {
@@ -171,9 +175,9 @@ export struct MyFavoritesPage {
   GroupFilterChip(label: string, count: number) {
     Text(`${label} ${count}`)
       .fontSize(13)
-      .fontColor(this.selectedGroup === label ? '#FFFFFF' : '#5B6CFF')
+      .fontColor(this.selectedGroup === label ? '#FFFFFF' : '#8B7355')
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .backgroundColor(this.selectedGroup === label ? '#5B6CFF' : '#EEF2FF')
+      .backgroundColor(this.selectedGroup === label ? '#C05040' : '#F2EDE8')
       .borderRadius(16)
       .onClick(() => {
         this.selectedGroup = label;
@@ -187,7 +191,7 @@ export struct MyFavoritesPage {
         Blank()
         Text('删除当前收藏夹')
           .fontSize(12)
-          .fontColor('#FF4D4F')
+          .fontColor('#C05040')
           .margin({ right: 16, top: 4 })
           .onClick(async () => {
             await interactionStore.deleteFavoriteGroup(this.username, this.selectedGroup);
@@ -210,7 +214,7 @@ export struct MyFavoritesPage {
     Column() {
       Text(message)
         .fontSize(15)
-        .fontColor('#999999')
+        .fontColor('#8B7355')
     }
     .width('100%')
     .layoutWeight(1)
@@ -227,26 +231,27 @@ export struct MyFavoritesPage {
           .height(72)
           .borderRadius(8)
           .objectFit(ImageFit.Cover)
-          .backgroundColor('#DDDDDD')
+          .backgroundColor('#E0D5C6')
           .alt($r('app.media.startIcon'))
 
         Column() {
           Text(item.title)
             .fontSize(17)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`${item.period} · ${item.museum}`)
             .fontSize(13)
-            .fontColor('#666666')
+            .fontColor('#8B7355')
             .margin({ top: 4 })
           Text(`当前分组：${item.groupName}`)
             .fontSize(12)
-            .fontColor('#5B6CFF')
+            .fontColor('#8B7355')
             .margin({ top: 4 })
           Text(formatDateTime(item.createdAt))
             .fontSize(12)
-            .fontColor('#BBBBBB')
+            .fontColor('#8B7355')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
@@ -264,13 +269,13 @@ export struct MyFavoritesPage {
       Row({ space: 16 }) {
         Text(this.editingArtifactId === item.artifactId ? '收起分组' : '更换分组')
           .fontSize(13)
-          .fontColor('#007AFF')
+          .fontColor('#C05040')
           .onClick(() => {
             this.editingArtifactId = this.editingArtifactId === item.artifactId ? '' : item.artifactId;
           })
         Text('移出收藏')
           .fontSize(13)
-          .fontColor('#FF4D4F')
+          .fontColor('#C05040')
           .onClick(async () => {
             await interactionStore.removeFavorite(item.artifactId, this.username);
             this.editingArtifactId = '';
@@ -287,9 +292,9 @@ export struct MyFavoritesPage {
           ForEach(this.favoriteGroups, (groupName: string) => {
             Text(groupName)
               .fontSize(12)
-              .fontColor(item.groupName === groupName ? '#FFFFFF' : '#5B6CFF')
+              .fontColor(item.groupName === groupName ? '#FFFFFF' : '#8B7355')
               .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .backgroundColor(item.groupName === groupName ? '#5B6CFF' : '#EEF2FF')
+              .backgroundColor(item.groupName === groupName ? '#C05040' : '#F2EDE8')
               .borderRadius(14)
               .margin({ right: 8, top: 10 })
               .onClick(async () => {
@@ -304,7 +309,7 @@ export struct MyFavoritesPage {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(12)
     .alignItems(HorizontalAlign.Start)
   }

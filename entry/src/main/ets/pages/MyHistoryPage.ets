@@ -25,7 +25,7 @@ export struct MyHistoryPage {
       this.PageHeader('浏览记录')
 
       if (this.isLoading) {
-        LoadingProgress().width(40).height(40).margin({ top: 80 })
+        LoadingProgress().width(40).height(40).margin({ top: 80 }).color('#C05040')
       } else if (this.historyList.length === 0) {
         this.EmptyHint('暂无浏览记录，浏览文物详情后会自动记录')
       } else {
@@ -42,7 +42,7 @@ export struct MyHistoryPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -50,11 +50,12 @@ export struct MyHistoryPage {
     Row() {
       Text('<')
         .fontSize(22)
-        .fontColor('#007AFF')
+        .fontColor('#C05040')
         .onClick(() => router.back())
       Text(title)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
       Text(' ')
@@ -63,7 +64,7 @@ export struct MyHistoryPage {
     .width('100%')
     .height(56)
     .padding({ left: 16, right: 16 })
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -71,7 +72,7 @@ export struct MyHistoryPage {
     Column() {
       Text(message)
         .fontSize(15)
-        .fontColor('#999999')
+        .fontColor('#8B7355')
     }
     .width('100%')
     .layoutWeight(1)
@@ -87,22 +88,23 @@ export struct MyHistoryPage {
         .height(72)
         .borderRadius(8)
         .objectFit(ImageFit.Cover)
-        .backgroundColor('#DDDDDD')
+        .backgroundColor('#E0D5C6')
         .alt($r('app.media.startIcon'))
 
       Column() {
         Text(item.title)
           .fontSize(17)
           .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${item.period} · ${item.museum}`)
           .fontSize(13)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
           .margin({ top: 4 })
         Text(`浏览于 ${formatDateTime(item.viewedAt)}`)
           .fontSize(12)
-          .fontColor('#999999')
+          .fontColor('#8B7355')
           .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Start)
@@ -111,7 +113,7 @@ export struct MyHistoryPage {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(12)
     .onClick(() => {
       router.pushUrl({

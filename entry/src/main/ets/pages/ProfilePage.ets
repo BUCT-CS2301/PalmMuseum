@@ -50,24 +50,27 @@ export struct ProfilePage {
   build() {
     Column() {
       if (this.isLogin) {
+        // 头像与用户名区域
         Column() {
           Circle({ width: 80, height: 80 })
-            .fill('#CCCCCC')
+            .fill('#E0D5C6')                     // 浅米色，与分割线一致
             .margin({ top: 28 })
 
           Text(this.username)
             .fontSize(20)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')                // 主文字色
             .margin({ top: 10 })
 
           Text('个人主页')
             .fontSize(14)
-            .fontColor('#666666')
+            .fontColor('#8B7355')                // 辅助文字色
             .margin({ top: 4 })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
 
+        // 菜单卡片
         Column() {
           this.MenuItem('收藏夹', '📦', 'pages/MyFavoritesPage')
           this.MenuItem('浏览记录', '⏰', 'pages/MyHistoryPage')
@@ -75,24 +78,33 @@ export struct ProfilePage {
           this.MenuItem('上传的照片', '📷', 'pages/MyUploadsPage')
           this.MenuItem('隐私设置', '🔒', 'pages/PrivacySettingPage')
           Divider()
+            .strokeWidth(0.5)
+            .color('#E0D5C6')
           this.MenuItem('退出登录', '🚪', '')
         }
         .width('100%')
-        .margin({ top: 18 })
-        .padding({ left: 20, right: 20 })
+        .backgroundColor('#F2EDE8')    // 改为暖米色，与页面背景融洽
+        .borderRadius(12)
+        .padding({ top: 8, bottom: 8, left: 20, right: 20 })
+        .margin({ left: 12, right: 12, top: 18 })
       } else {
+        // 未登录状态
         Column({ space: 20 }) {
           Circle({ width: 80, height: 80 })
-            .fill('#CCCCCC')
+            .fill('#E0D5C6')
             .margin({ top: 72 })
 
           Text('未登录')
             .fontSize(18)
+            .fontColor('#3A3A3A')
 
           Button('去登录')
             .width(200)
             .height(44)
-            .backgroundColor('#007AFF')
+            .fontSize(16)
+            .fontColor(Color.White)
+            .backgroundColor('#C05040')          // 敦煌红
+            .borderRadius(8)
             .onClick(() => {
               router.pushUrl({ url: 'pages/LoginPage' });
             })
@@ -100,8 +112,9 @@ export struct ProfilePage {
           Button('注册账号')
             .width(200)
             .height(44)
-            .backgroundColor('transparent')
-            .fontColor('#007AFF')
+            .fontSize(14)
+            .backgroundColor(Color.Transparent)
+            .fontColor('#C05040')                // 敦煌红
             .onClick(() => {
               router.pushUrl({ url: 'pages/RegisterPage' });
             })
@@ -112,7 +125,7 @@ export struct ProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F8F8F8')
+    .backgroundColor('#F5F0E8')                 // 页面背景米白
     .onAppear(() => {
       this.refreshStats();
     })
@@ -132,12 +145,13 @@ export struct ProfilePage {
 
       Text(title)
         .fontSize(16)
+        .fontColor('#3A3A3A')                    // 菜单文字色
 
       Blank()
 
       Text('>')
         .fontSize(16)
-        .fontColor('#CCCCCC')
+        .fontColor('#8B7355')                    // 箭头色
     }
     .width('100%')
     .height(50)

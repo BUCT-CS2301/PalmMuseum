@@ -1,6 +1,6 @@
-// ShowPage.ets（首页展览轮播 - 可滚动、可点击跳转）
+// ShowPage.ets
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
-import router from '@ohos.router';                // ★ 新增路由导入
+import router from '@ohos.router';
 
 @Entry
 @Component
@@ -57,7 +57,7 @@ export struct ShowPage {
               .padding(16)
               .width('100%')
               .alignItems(HorizontalAlign.Start)
-              .onClick(() => {                           // ★ 轮播图点击跳转
+              .onClick(() => {
                 router.pushUrl({
                   url: 'pages/ArtifactDetailPage',
                   params: { objectId: item.id }

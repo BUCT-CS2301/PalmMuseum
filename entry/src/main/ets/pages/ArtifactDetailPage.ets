@@ -173,6 +173,7 @@ export struct ArtifactDetailPage {
               Text(this.artifact.title)
                 .fontSize(24)
                 .fontWeight(FontWeight.Bold)
+                .fontColor('#3A3A3A')
                 .margin({ bottom: 12 })
 
               Row() {
@@ -186,35 +187,39 @@ export struct ArtifactDetailPage {
 
               Text(`收藏机构：${this.artifact.museum}`)
                 .fontSize(16)
-                .fontColor('#666666')
+                .fontColor('#8B7355')
                 .margin({ bottom: 24 })
 
               Text('文物介绍')
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
+                .fontColor('#3A3A3A')
                 .alignSelf(ItemAlign.Start)
                 .margin({ bottom: 8 })
 
               Text(this.artifact.description)
                 .fontSize(16)
+                .fontColor('#3A3A3A')
                 .lineHeight(24)
                 .textAlign(TextAlign.Start)
                 .margin({ bottom: 20 })
-
-              if (this.relatedEntities.length > 0) {
-                this.RelatedEntitySection()
-              }
-
-              if (this.relatedList.length > 0) {
-                this.RelatedListSection()
-              }
-
-              this.ActionSection()
-              this.CommentSection()
-              this.UploadSection()
             }
+            .backgroundColor('#FFFFFF')
+            .borderRadius(12)
             .padding(16)
-            .alignItems(HorizontalAlign.Center)
+            .margin({ left: 12, right: 12, top: 12, bottom: 8 })
+
+            if (this.relatedEntities.length > 0) {
+              this.RelatedEntitySection()
+            }
+
+            if (this.relatedList.length > 0) {
+              this.RelatedListSection()
+            }
+
+            this.ActionSection()
+            this.CommentSection()
+            this.UploadSection()
           }
         }
         .scrollBar(BarState.Auto)
@@ -222,7 +227,7 @@ export struct ArtifactDetailPage {
         Column() {
           Text('未找到该文物')
             .fontSize(20)
-            .fontColor('#FF0000')
+            .fontColor('#C05040')
           Button('返回首页')
             .margin({ top: 20 })
             .onClick(() => router.back())
@@ -235,7 +240,7 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -293,7 +298,7 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .height(400)
-    .backgroundColor('#FAFAFA')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -302,6 +307,7 @@ export struct ArtifactDetailPage {
       Text('同年代文物')
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: 8 })
 
@@ -309,8 +315,8 @@ export struct ArtifactDetailPage {
         ForEach(this.relatedEntities, (entity: RelatedEntity) => {
           Text(entity.title)
             .fontSize(13)
-            .fontColor('#1A73E8')
-            .backgroundColor('#E8F0FE')
+            .fontColor('#8B7355')
+            .backgroundColor('#F2EDE8')
             .borderRadius(12)
             .padding({ left: 10, right: 10, top: 4, bottom: 4 })
             .margin({ right: 8, bottom: 6 })
@@ -325,7 +331,10 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .margin({ bottom: 20 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(12)
+    .padding(12)
+    .margin({ left: 12, right: 12, bottom: 8 })
   }
 
   @Builder
@@ -334,6 +343,7 @@ export struct ArtifactDetailPage {
       Text('相关推荐')
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: 8 })
 
@@ -350,6 +360,7 @@ export struct ArtifactDetailPage {
 
               Text(item.title)
                 .fontSize(12)
+                .fontColor('#3A3A3A')
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .width(120)
@@ -357,7 +368,7 @@ export struct ArtifactDetailPage {
 
               Text(item.period)
                 .fontSize(11)
-                .fontColor('#888888')
+                .fontColor('#8B7355')
             }
             .margin({ right: 8 })
             .onClick(() => {
@@ -375,7 +386,10 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .margin({ bottom: 20 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(12)
+    .padding(12)
+    .margin({ left: 12, right: 12, bottom: 8 })
   }
 
   @Builder
@@ -386,7 +400,7 @@ export struct ArtifactDetailPage {
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
-          .backgroundColor('#1677FF')
+          .backgroundColor('#C05040')
           .fontColor(Color.White)
           .onClick(async () => {
             if (this.artifact !== null) {
@@ -405,7 +419,7 @@ export struct ArtifactDetailPage {
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
-          .backgroundColor('#8E44AD')
+          .backgroundColor('#8B7355')
           .fontColor(Color.White)
           .onClick(async () => {
             if (this.artifact !== null) {
@@ -426,6 +440,7 @@ export struct ArtifactDetailPage {
         Text('语音播放控制')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')
           .alignSelf(ItemAlign.Start)
 
         Row({ space: 8 }) {
@@ -433,8 +448,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(36)
             .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 0.75 ? '#1677FF' : '#E8F0FE')
-            .fontColor(this.currentVoiceSpeed === 0.75 ? Color.White : '#1677FF')
+            .backgroundColor(this.currentVoiceSpeed === 0.75 ? '#C05040' : '#F2EDE8')
+            .fontColor(this.currentVoiceSpeed === 0.75 ? Color.White : '#8B7355')
             .onClick(() => {
               this.currentVoiceSpeed = 0.75;
               MuseumVoiceService.setSpeed(0.75);
@@ -444,8 +459,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(36)
             .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1 ? '#1677FF' : '#E8F0FE')
-            .fontColor(this.currentVoiceSpeed === 1 ? Color.White : '#1677FF')
+            .backgroundColor(this.currentVoiceSpeed === 1 ? '#C05040' : '#F2EDE8')
+            .fontColor(this.currentVoiceSpeed === 1 ? Color.White : '#8B7355')
             .onClick(() => {
               this.currentVoiceSpeed = 1;
               MuseumVoiceService.setSpeed(1);
@@ -455,8 +470,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(36)
             .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1.25 ? '#1677FF' : '#E8F0FE')
-            .fontColor(this.currentVoiceSpeed === 1.25 ? Color.White : '#1677FF')
+            .backgroundColor(this.currentVoiceSpeed === 1.25 ? '#C05040' : '#F2EDE8')
+            .fontColor(this.currentVoiceSpeed === 1.25 ? Color.White : '#8B7355')
             .onClick(() => {
               this.currentVoiceSpeed = 1.25;
               MuseumVoiceService.setSpeed(1.25);
@@ -466,8 +481,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(36)
             .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1.5 ? '#1677FF' : '#E8F0FE')
-            .fontColor(this.currentVoiceSpeed === 1.5 ? Color.White : '#1677FF')
+            .backgroundColor(this.currentVoiceSpeed === 1.5 ? '#C05040' : '#F2EDE8')
+            .fontColor(this.currentVoiceSpeed === 1.5 ? Color.White : '#8B7355')
             .onClick(() => {
               this.currentVoiceSpeed = 1.5;
               MuseumVoiceService.setSpeed(1.5);
@@ -480,8 +495,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(38)
             .fontSize(14)
-            .backgroundColor('#EEF1FF')
-            .fontColor('#5B6CFF')
+            .backgroundColor('#F2EDE8')
+            .fontColor('#8B7355')
             .onClick(() => {
               MuseumVoiceService.previousParagraph();
               this.voiceProgressText = MuseumVoiceService.getProgressText();
@@ -491,8 +506,8 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(38)
             .fontSize(14)
-            .backgroundColor('#EEF1FF')
-            .fontColor('#5B6CFF')
+            .backgroundColor('#F2EDE8')
+            .fontColor('#8B7355')
             .onClick(() => {
               MuseumVoiceService.nextParagraph();
               this.voiceProgressText = MuseumVoiceService.getProgressText();
@@ -505,7 +520,7 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(38)
             .fontSize(14)
-            .backgroundColor('#FF4D4F')
+            .backgroundColor('#C05040')
             .fontColor(Color.White)
             .onClick(() => {
               MuseumVoiceService.stop();
@@ -515,7 +530,7 @@ export struct ArtifactDetailPage {
             .layoutWeight(1)
             .height(38)
             .fontSize(14)
-            .backgroundColor('#18A058')
+            .backgroundColor('#8B7355')
             .fontColor(Color.White)
             .onClick(() => {
               MuseumVoiceService.replay();
@@ -526,21 +541,20 @@ export struct ArtifactDetailPage {
 
         Text(`当前段落：${this.voiceProgressText}`)
           .fontSize(13)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
           .alignSelf(ItemAlign.Start)
       }
       .width('100%')
       .padding(12)
-      .backgroundColor('#FFFFFF')
-      .borderRadius(12)
+      .backgroundColor(Color.Transparent)
 
       Row({ space: 12 }) {
         Button(this.likeSummary.active ? `已赞 ${this.likeSummary.count}` : `点赞 ${this.likeSummary.count}`, { type: ButtonType.Capsule })
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
-          .backgroundColor(this.likeSummary.active ? '#FF4D4F' : '#FF7A00')
-          .fontColor(Color.White)
+          .backgroundColor(this.likeSummary.active ? '#C05040' : '#F2EDE8')
+          .fontColor(this.likeSummary.active ? Color.White : '#8B7355')
           .onClick(() => {
             this.handleToggleLike();
           })
@@ -549,8 +563,8 @@ export struct ArtifactDetailPage {
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
-          .backgroundColor(this.favoriteSummary.active ? '#0E7A3E' : '#18A058')
-          .fontColor(Color.White)
+          .backgroundColor(this.favoriteSummary.active ? '#8B7355' : '#F2EDE8')
+          .fontColor(this.favoriteSummary.active ? Color.White : '#8B7355')
           .onClick(() => {
             this.handleToggleFavorite();
           })
@@ -560,7 +574,10 @@ export struct ArtifactDetailPage {
       this.FavoriteGroupSelector()
     }
     .width('100%')
-    .margin({ top: 20 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(12)
+    .padding(12)
+    .margin({ left: 12, right: 12, bottom: 8 })
   }
 
   @Builder
@@ -570,10 +587,11 @@ export struct ArtifactDetailPage {
         Text('收藏分组')
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')
         Blank()
         Text(this.favoriteSummary.active ? `当前分组：${this.selectedFavoriteGroup}` : '选择后用于加入收藏')
           .fontSize(12)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
       }
       .width('100%')
 
@@ -581,9 +599,9 @@ export struct ArtifactDetailPage {
         ForEach(this.favoriteGroups, (groupName: string) => {
           Text(groupName)
             .fontSize(12)
-            .fontColor(this.selectedFavoriteGroup === groupName ? '#FFFFFF' : '#0E7A3E')
+            .fontColor(this.selectedFavoriteGroup === groupName ? '#FFFFFF' : '#8B7355')
             .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .backgroundColor(this.selectedFavoriteGroup === groupName ? '#0E7A3E' : '#EAF7EF')
+            .backgroundColor(this.selectedFavoriteGroup === groupName ? '#8B7355' : '#F2EDE8')
             .borderRadius(14)
             .margin({ right: 8, top: 4 })
             .onClick(() => {
@@ -595,8 +613,7 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(12)
+    .backgroundColor(Color.Transparent)
   }
 
   @Builder
@@ -606,24 +623,25 @@ export struct ArtifactDetailPage {
         Text(`评论区（${this.comments.length}）`)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')
         Blank()
         Text('公开评论支持点赞与回复')
           .fontSize(12)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
       }
       .width('100%')
       .margin({ bottom: 12 })
 
       Text('新评论需经过审核后才会公开显示，你的待审核评论会仅自己可见。')
         .fontSize(13)
-        .fontColor('#666666')
+        .fontColor('#8B7355')
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: 12 })
 
       if (this.comments.length === 0) {
         Text('暂无评论，快来抢沙发')
           .fontSize(14)
-          .fontColor('#999999')
+          .fontColor('#8B7355')
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: 12 })
       } else {
@@ -640,7 +658,7 @@ export struct ArtifactDetailPage {
         Row() {
           Text(`正在回复 ${this.replyTarget.username}`)
             .fontSize(12)
-            .fontColor('#5B6CFF')
+            .fontColor('#C05040')
           Blank()
           Text('取消回复')
             .fontSize(12)
@@ -669,7 +687,7 @@ export struct ArtifactDetailPage {
         Button('发表')
           .height(44)
           .fontSize(14)
-          .backgroundColor('#007AFF')
+          .backgroundColor('#C05040')
           .fontColor(Color.White)
           .enabled(!this.isSubmittingComment)
           .onClick(() => {
@@ -680,7 +698,10 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .margin({ top: 24 })
+    .backgroundColor('#FFFFFF')
+    .borderRadius(12)
+    .padding(12)
+    .margin({ left: 12, right: 12, bottom: 8 })
   }
 
   @Builder
@@ -690,6 +711,7 @@ export struct ArtifactDetailPage {
         Text(item.username)
           .fontSize(level > 0 ? 13 : 14)
           .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')
         Blank()
         Text(formatReviewStatus(item.status))
           .fontSize(12)
@@ -700,25 +722,26 @@ export struct ArtifactDetailPage {
       if (item.replyTo) {
         Text(`回复 ${item.replyTo}`)
           .fontSize(12)
-          .fontColor('#5B6CFF')
+          .fontColor('#C05040')
       }
 
       Text(item.content)
         .fontSize(level > 0 ? 14 : 15)
         .lineHeight(22)
+        .fontColor('#3A3A3A')
         .width('100%')
 
       Row() {
         Text(formatDateTime(item.createdAt))
           .fontSize(12)
-          .fontColor('#999999')
+          .fontColor('#8B7355')
         Blank()
         if (item.status === ReviewStatus.Approved) {
           Text(this.buildCommentActionLabel(item))
             .fontSize(12)
-            .fontColor(item.likedByCurrentUser ? '#FFFFFF' : '#666666')
+            .fontColor(item.likedByCurrentUser ? '#FFFFFF' : '#8B7355')
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor(item.likedByCurrentUser ? '#FF7A00' : '#F3F4F6')
+            .backgroundColor(item.likedByCurrentUser ? '#C05040' : '#F2EDE8')
             .borderRadius(14)
             .onClick(() => {
               this.handleToggleCommentLike(item);
@@ -726,10 +749,10 @@ export struct ArtifactDetailPage {
 
           Text('回复')
             .fontSize(12)
-            .fontColor('#5B6CFF')
+            .fontColor('#8B7355')
             .margin({ left: 10 })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor('#EEF1FF')
+            .backgroundColor('#F2EDE8')
             .borderRadius(14)
             .onClick(() => {
               this.prepareReply(item);
@@ -755,8 +778,9 @@ export struct ArtifactDetailPage {
     .width('100%')
     .padding(12)
     .margin({ left: level * 8 })
-    .backgroundColor(level > 0 ? '#F8FAFF' : '#FFFFFF')
+    .backgroundColor(level > 0 ? '#F2EDE8' : '#FFFFFF')
     .borderRadius(10)
+    .border({ width: 1, color: '#E0D5C6' })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -766,11 +790,12 @@ export struct ArtifactDetailPage {
       Text('上传参观照片')
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
 
       Text('上传的照片会先进入审核，你可以补充拍摄地点和一句简短说明。')
         .fontSize(13)
-        .fontColor('#666666')
+        .fontColor('#8B7355')
         .alignSelf(ItemAlign.Start)
 
       TextInput({ placeholder: '拍摄地点', text: this.uploadLocation })
@@ -795,7 +820,7 @@ export struct ArtifactDetailPage {
         .width('100%')
         .height(44)
         .fontSize(15)
-        .backgroundColor('#5B6CFF')
+        .backgroundColor('#C05040')
         .fontColor(Color.White)
         .enabled(!this.isUploadingPhoto)
         .onClick(() => {
@@ -804,9 +829,9 @@ export struct ArtifactDetailPage {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('#EEF1FF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(12)
-    .margin({ top: 24, bottom: 20 })
+    .margin({ left: 12, right: 12, bottom: 20 })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -815,10 +840,11 @@ export struct ArtifactDetailPage {
     Column() {
       Text(label)
         .fontSize(12)
-        .fontColor('#999999')
+        .fontColor('#8B7355')
       Text(value)
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
+        .fontColor('#3A3A3A')
         .margin({ top: 4 })
     }
   }

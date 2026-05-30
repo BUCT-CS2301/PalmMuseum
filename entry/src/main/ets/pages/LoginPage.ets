@@ -24,11 +24,17 @@ export struct LoginPage {
       Text('欢迎登录')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .margin({ top: 60, bottom: 40 })
 
       TextInput({ placeholder: '请输入用户名/手机号' })
         .width('80%')
         .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .margin({ bottom: 16 })
         .onChange((value: string) => {
           this.username = value;
@@ -38,6 +44,11 @@ export struct LoginPage {
         .width('80%')
         .height(48)
         .type(InputType.Password)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .margin({ bottom: 24 })
         .onChange((value: string) => {
           this.password = value;
@@ -47,7 +58,9 @@ export struct LoginPage {
         .width('80%')
         .height(48)
         .fontSize(18)
-        .backgroundColor('#007AFF')
+        .fontColor(Color.White)
+        .backgroundColor('#C05040')
+        .borderRadius(8)
         .enabled(!this.isLoading)
         .onClick(() => {
           this.doLogin();
@@ -56,10 +69,10 @@ export struct LoginPage {
       Row() {
         Text('还没有账号？')
           .fontSize(14)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
         Text('立即注册')
           .fontSize(14)
-          .fontColor('#007AFF')
+          .fontColor('#C05040')
           .onClick(() => {
             router.pushUrl({ url: 'pages/RegisterPage' });
           })
@@ -70,6 +83,7 @@ export struct LoginPage {
         LoadingProgress()
           .width(40)
           .height(40)
+          .color('#C05040')
           .margin({ top: 20 })
       }
     }
@@ -77,6 +91,7 @@ export struct LoginPage {
     .height('100%')
     .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#F5F0E8')
   }
 
   async doLogin() {
@@ -88,7 +103,6 @@ export struct LoginPage {
 
     setTimeout(() => {
       this.isLoading = false;
-      // 使用 AppStorage 保存登录状态
       AppStorage.SetOrCreate('isLogin', true);
       AppStorage.SetOrCreate('username', this.username);
       promptAction.showToast({ message: '登录成功' });
