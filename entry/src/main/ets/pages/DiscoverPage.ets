@@ -208,7 +208,7 @@ export struct DiscoverPage {
         Text('发现')
           .fontSize(30)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827')
+          .fontColor('#3A3A3A')
       }
       .margin({ top: 20, bottom: 16 })
 
@@ -222,7 +222,7 @@ export struct DiscoverPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F3F4F6')
+    .backgroundColor('#F5F0E8')
     .alignItems(HorizontalAlign.Center)
   }
 
@@ -233,17 +233,17 @@ export struct DiscoverPage {
   voiceSearchCard() {
     Column({ space: 16 }) {
       Row() {
-        Text('语音搜索')
+        Text('🎙️  语音搜索')          // 增加图标
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#111827')
+          .fontColor('#3A3A3A')
 
         Button('语音提示')
           .width(92)
           .height(32)
           .fontSize(12)
-          .backgroundColor('#E5E7EB')
-          .fontColor('#374151')
+          .backgroundColor('#F2EDE8')
+          .fontColor('#8B7355')
           .borderRadius(16)
           .margin({ left: 12 })
           .onClick(() => {
@@ -257,15 +257,17 @@ export struct DiscoverPage {
 
       Text('支持关键词：青花、唐三彩、玉琮、青铜、大英博物馆')
         .fontSize(13)
-        .fontColor('#9CA3AF')
+        .fontColor('#8B7355')
         .alignSelf(ItemAlign.Start)
 
       TextInput({ placeholder: '请输入或说出文物名称、年代、博物馆...' })
         .width('100%')
         .height(50)
         .backgroundColor('#FFFFFF')
-        .border({ width: 1, color: '#D1D5DB' })
+        .border({ width: 1, color: '#E0D5C6' })
         .borderRadius(12)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
         .padding({ left: 16 })
         .onChange((value: string) => {
           this.searchInput = value;
@@ -275,7 +277,7 @@ export struct DiscoverPage {
         .width('100%')
         .height(50)
         .fontSize(16)
-        .backgroundColor('#10B981')
+        .backgroundColor('#C76B5A')           // 柔化敦煌红
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(() => {
@@ -292,7 +294,7 @@ export struct DiscoverPage {
         .width('100%')
         .height(50)
         .fontSize(16)
-        .backgroundColor('#007AFF')
+        .backgroundColor('#A68B6A')           // 浅大地色
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(async () => {
@@ -314,8 +316,8 @@ export struct DiscoverPage {
         .width('100%')
         .height(50)
         .fontSize(16)
-        .backgroundColor('#F97316')
-        .fontColor(Color.White)
+        .backgroundColor('#E0D5C6')
+        .fontColor('#8B7355')
         .borderRadius(12)
         .onClick(() => {
           MuseumVoiceService.finishVoiceSearch();
@@ -324,18 +326,18 @@ export struct DiscoverPage {
       if (this.voiceText) {
         Text(`识别 / 搜索结果：${this.voiceText}`)
           .fontSize(15)
-          .fontColor('#059669')
+          .fontColor('#C05040')
           .alignSelf(ItemAlign.Start)
           .margin({ top: 4 })
       }
     }
     .width('92%')
     .padding(20)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(18)
     .shadow({
       radius: 6,
-      color: '#0000000A',
+      color: '#18000000',
       offsetX: 0,
       offsetY: 2
     })
@@ -347,17 +349,17 @@ export struct DiscoverPage {
   @Builder
   imageSearchCard() {
     Column({ space: 16 }) {
-      Text('以图搜图')
+      Text('📷  以图搜图')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#111827')
+        .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
 
       Button('拍照搜索文物')
         .width('100%')
         .height(54)
         .fontSize(16)
-        .backgroundColor('#F97316')
+        .backgroundColor('#C76B5A')           // 与文字搜索同色，统一柔和红
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(async () => {
@@ -368,7 +370,7 @@ export struct DiscoverPage {
         .width('100%')
         .height(54)
         .fontSize(16)
-        .backgroundColor('#8B5CF6')
+        .backgroundColor('#A68B6A')           // 浅褐
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(async () => {
@@ -378,18 +380,18 @@ export struct DiscoverPage {
       if (this.selectedImage) {
         Text('已选择图片')
           .fontSize(14)
-          .fontColor('#059669')
+          .fontColor('#C05040')
           .alignSelf(ItemAlign.Start)
       }
     }
     .width('92%')
     .padding(20)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(18)
     .margin({ top: 16 })
     .shadow({
       radius: 6,
-      color: '#0000000A',
+      color: '#18000000',
       offsetX: 0,
       offsetY: 2
     })

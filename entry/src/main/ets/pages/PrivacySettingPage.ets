@@ -19,7 +19,7 @@ export struct PrivacySettingPage {
         Row() {
           Text('< 返回')
             .fontSize(14)
-            .fontColor('#3A3A3A')
+            .fontColor('#C05040')            // 敦煌红
             .onClick(() => {
               router.back();
             })
