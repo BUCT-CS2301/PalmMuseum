@@ -12,6 +12,10 @@
     "pages/MyHistoryPage",
     "pages/MyUploadsPage",
     "pages/PrivacySettingPage",
-    "pages/ImageSearchResultPage"
+    "pages/ImageSearchResultPage",
+    "pages/OtherProfilePage",
+    "pages/SettingsPage",
+    "pages/EditProfilePage",
+    "pages/ChangePasswordPage"
   ]
 }

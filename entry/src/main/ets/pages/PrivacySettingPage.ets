@@ -30,11 +30,11 @@ export struct PrivacySettingPage {
         Text('隐私设置')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#3A3A3A')               // 主文字色
+          .fontColor('#3A3A3A')
           .width('100%')
-        Text('是否让别人看到你的收藏、评论和上传内容')
+        Text('是否让别人看到你的收藏、点赞、评论和上传内容')
           .fontSize(13)
-          .fontColor('#8B7355')               // 辅助文字色
+          .fontColor('#8B7355')
           .width('100%')
       }
       .width('100%')
@@ -42,6 +42,7 @@ export struct PrivacySettingPage {
 
       Column({ space: 12 }) {
         this.SettingRow('收藏夹可见', '关闭后仅自己可见', this.privacy.showFavorites, 'favorite')
+        this.SettingRow('点赞可见', '关闭后其他用户看不到你的点赞记录', this.privacy.showLikes, 'like')
         this.SettingRow('评论可见', '关闭后主页中不展示公开评论', this.privacy.showComments, 'comment')
         this.SettingRow('上传照片可见', '关闭后相册内容默认私密', this.privacy.showPhotos, 'photo')
       }
@@ -55,7 +56,7 @@ export struct PrivacySettingPage {
     .width('100%')
     .height('100%')
     .padding(16)
-    .backgroundColor('#F5F0E8')               // 页面背景米白，与主页一致
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -65,24 +66,24 @@ export struct PrivacySettingPage {
         Text(title)
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#3A3A3A')               // 主文字色
+          .fontColor('#3A3A3A')
         Text(description)
           .fontSize(12)
-          .fontColor('#8B7355')               // 辅助文字色
+          .fontColor('#8B7355')
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
       Toggle({ type: ToggleType.Switch, isOn: isOn })
-        .selectedColor('#C05040')             // 敦煌红选中色
+        .selectedColor('#C05040')
         .onChange((value: boolean) => {
           this.updatePrivacy(key, value);
         })
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#F2EDE8')               // 暖米色卡片，柔和融入背景
-    .borderRadius(18)
+    .backgroundColor('#F2EDE8')
+    .borderRadius(12)
   }
 
   private async loadPrivacy() {
@@ -96,11 +97,14 @@ export struct PrivacySettingPage {
   private async updatePrivacy(key: string, value: boolean) {
     let nextPrivacy: PrivacySettings = {
       showFavorites: this.privacy.showFavorites,
+      showLikes: this.privacy.showLikes,
       showComments: this.privacy.showComments,
       showPhotos: this.privacy.showPhotos
     };
     if (key === 'favorite') {
       nextPrivacy.showFavorites = value;
+    } else if (key === 'like') {
+      nextPrivacy.showLikes = value;
     } else if (key === 'comment') {
       nextPrivacy.showComments = value;
     } else if (key === 'photo') {

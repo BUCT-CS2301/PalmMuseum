@@ -1,7 +1,7 @@
 // pages/RegisterPage.ets
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
-import preferences from '@ohos.data.preferences';
+import { UserService, RegisterType } from '../common/services/UserService';
 
 @Entry
 @Component
@@ -9,16 +9,68 @@ export struct RegisterPage {
   @State username: string = '';
   @State password: string = '';
   @State confirmPwd: string = '';
+  @State registerType: RegisterType = 'phone';
+  @State accountValue: string = '';
+  @State isLoading: boolean = false;
+  @State typeOptions: string[] = ['手机号注册', '邮箱注册'];
 
   build() {
     Column() {
       Text('注册账号')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#3A3A3A')
+        .fontColor('#3A3A3A')                     // 统一标题色
         .margin({ top: 60, bottom: 40 })
 
-      TextInput({ placeholder: '用户名/手机号' })
+      // 类型选择按钮组
+      Row() {
+        ForEach(this.typeOptions, (item: string, index: number) => {
+          Button(item)
+            .fontSize(14)
+            .height(36)
+            .layoutWeight(1)
+            .margin({ left: index === 0 ? 0 : 8 })
+            .backgroundColor(this.registerType === (index === 0 ? 'phone' : 'email') ? '#C05040' : '#F2EDE8')
+            .fontColor(this.registerType === (index === 0 ? 'phone' : 'email') ? Color.White : '#3A3A3A')
+            .borderRadius(8)
+            .onClick(() => {
+              this.registerType = index === 0 ? 'phone' : 'email';
+              this.accountValue = '';
+            })
+        })
+      }
+      .width('80%')
+      .margin({ bottom: 16 })
+
+      // 根据类型显示不同输入框
+      if (this.registerType === 'phone') {
+        TextInput({ placeholder: '请输入手机号', text: this.accountValue })
+          .type(InputType.PhoneNumber)
+          .maxLength(11)
+          .width('80%')
+          .height(48)
+          .fontColor('#3A3A3A')
+          .placeholderColor('#999999')
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .border({ width: 1, color: '#E0D5C6' })
+          .margin({ bottom: 16 })
+          .onChange((value: string) => { this.accountValue = value; })
+      } else {
+        TextInput({ placeholder: '请输入邮箱地址', text: this.accountValue })
+          .type(InputType.Email)
+          .width('80%')
+          .height(48)
+          .fontColor('#3A3A3A')
+          .placeholderColor('#999999')
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .border({ width: 1, color: '#E0D5C6' })
+          .margin({ bottom: 16 })
+          .onChange((value: string) => { this.accountValue = value; })
+      }
+
+      TextInput({ placeholder: '设置用户名' })
         .width('80%')
         .height(48)
         .fontColor('#3A3A3A')
@@ -29,7 +81,7 @@ export struct RegisterPage {
         .margin({ bottom: 16 })
         .onChange((val: string) => this.username = val)
 
-      TextInput({ placeholder: '密码' })
+      TextInput({ placeholder: '设置密码' })
         .width('80%')
         .height(48)
         .type(InputType.Password)
@@ -60,9 +112,8 @@ export struct RegisterPage {
         .fontColor(Color.White)
         .backgroundColor('#C05040')
         .borderRadius(8)
-        .onClick(() => {
-          this.doRegister();
-        })
+        .enabled(!this.isLoading)
+        .onClick(() => { this.doRegister(); })
 
       Button('已有账号？去登录')
         .width('80%')
@@ -74,16 +125,24 @@ export struct RegisterPage {
         .onClick(() => {
           router.back();
         })
+
+      if (this.isLoading) {
+        LoadingProgress()
+          .width(40)
+          .height(40)
+          .color('#C05040')                     // 加载指示器颜色适配
+          .margin({ top: 20 });
+      }
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#F5F0E8')
+    .backgroundColor('#F5F0E8')                  // 统一页面背景米白
   }
 
   async doRegister() {
-    if (!this.username || !this.password) {
+    if (!this.username || !this.password || !this.accountValue) {
       promptAction.showToast({ message: '请填写完整信息' });
       return;
     }
@@ -91,9 +150,42 @@ export struct RegisterPage {
       promptAction.showToast({ message: '两次密码不一致' });
       return;
     }
-    AppStorage.SetOrCreate('isLogin', true);
-    AppStorage.SetOrCreate('username', this.username);
-    promptAction.showToast({ message: '注册成功，已自动登录' });
-    router.back();
+    if (this.username.length < 3) {
+      promptAction.showToast({ message: '用户名至少3个字符' });
+      return;
+    }
+    if (this.password.length < 4) {
+      promptAction.showToast({ message: '密码至少4位' });
+      return;
+    }
+
+    if (this.registerType === 'phone') {
+      if (!/^1[3-9]\d{9}$/.test(this.accountValue)) {
+        promptAction.showToast({ message: '请输入正确的手机号' });
+        return;
+      }
+    } else {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.accountValue)) {
+        promptAction.showToast({ message: '请输入正确的邮箱地址' });
+        return;
+      }
+    }
+
+    this.isLoading = true;
+    const result = await UserService.register(
+      this.username,
+      this.password,
+      this.registerType,
+      this.accountValue
+    );
+    this.isLoading = false;
+    if (result.success) {
+      AppStorage.SetOrCreate('isLogin', true);
+      AppStorage.SetOrCreate('username', this.username);
+      promptAction.showToast({ message: '注册成功，已自动登录' });
+      router.back();
+    } else {
+      promptAction.showToast({ message: result.message || '注册失败' });
+    }
   }
 }
