@@ -19,7 +19,7 @@ export struct PrivacySettingPage {
         Row() {
           Text('< 返回')
             .fontSize(14)
-            .fontColor('#8C5A2B')
+            .fontColor('#C05040')            // 敦煌红
             .onClick(() => {
               router.back();
             })
@@ -30,10 +30,11 @@ export struct PrivacySettingPage {
         Text('隐私设置')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')               // 主文字色
           .width('100%')
         Text('是否让别人看到你的收藏、评论和上传内容')
           .fontSize(13)
-          .fontColor('#7A6A58')
+          .fontColor('#8B7355')               // 辅助文字色
           .width('100%')
       }
       .width('100%')
@@ -48,13 +49,13 @@ export struct PrivacySettingPage {
 
       Text('设置会实时保存到本地，后续接入后端时可直接映射到用户配置接口。')
         .fontSize(12)
-        .fontColor('#8F8B85')
+        .fontColor('#8B7355')
         .width('100%')
     }
     .width('100%')
     .height('100%')
     .padding(16)
-    .backgroundColor('#F6F2EC')
+    .backgroundColor('#F5F0E8')               // 页面背景米白，与主页一致
   }
 
   @Builder
@@ -64,22 +65,23 @@ export struct PrivacySettingPage {
         Text(title)
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')               // 主文字色
         Text(description)
           .fontSize(12)
-          .fontColor('#8D8D8D')
+          .fontColor('#8B7355')               // 辅助文字色
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
       Toggle({ type: ToggleType.Switch, isOn: isOn })
-        .selectedColor('#8C5A2B')
+        .selectedColor('#C05040')             // 敦煌红选中色
         .onChange((value: boolean) => {
           this.updatePrivacy(key, value);
         })
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')               // 暖米色卡片，柔和融入背景
     .borderRadius(18)
   }
 

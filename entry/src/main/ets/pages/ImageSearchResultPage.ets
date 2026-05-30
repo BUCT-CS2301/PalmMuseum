@@ -29,6 +29,7 @@ export struct ImageSearchResultPage {
       Text('以图搜图结果')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')               // 主文字色
         .margin({ top: 40, bottom: 20 })
 
       List() {
@@ -45,16 +46,17 @@ export struct ImageSearchResultPage {
                 Text(item.name)
                   .fontSize(22)
                   .fontWeight(FontWeight.Bold)
+                  .fontColor('#3A3A3A')
                   .margin({ bottom: 10 })
 
                 Text('年代：' + item.era)
                   .fontSize(16)
-                  .fontColor('#666666')
+                  .fontColor('#8B7355')      // 辅助文字色
                   .margin({ bottom: 10 })
 
                 Text('相似度：' + item.similarity + '%')
                   .fontSize(18)
-                  .fontColor('#FF3B30')
+                  .fontColor('#C05040')      // 敦煌红强调色
                   .fontWeight(FontWeight.Bold)
               }
               .alignItems(HorizontalAlign.Start)
@@ -63,7 +65,8 @@ export struct ImageSearchResultPage {
             .width('100%')
             .padding(16)
             .backgroundColor('#FFFFFF')
-            .borderRadius(18)
+            .borderRadius(12)
+            .shadow({ radius: 6, color: '#18000000', offsetY: 2 })  // 与主页卡片同款阴影
           }
           .margin({ bottom: 16 })
         })
@@ -74,7 +77,7 @@ export struct ImageSearchResultPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')               // 页面背景米白
     .alignItems(HorizontalAlign.Center)
   }
 }

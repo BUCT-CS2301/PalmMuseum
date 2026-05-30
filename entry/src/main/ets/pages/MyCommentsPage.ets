@@ -52,12 +52,12 @@ export struct MyCommentsPage {
 
       Text('待审核评论仅自己可见，通过后才会出现在公开评论区。')
         .fontSize(13)
-        .fontColor('#666666')
+        .fontColor('#8B7355')
         .width('100%')
         .padding({ left: 16, right: 16, top: 12 })
 
       if (this.isLoading) {
-        LoadingProgress().width(40).height(40).margin({ top: 80 })
+        LoadingProgress().width(40).height(40).margin({ top: 80 }).color('#C05040')
       } else if (this.comments.length === 0) {
         this.EmptyHint('还没有发表过评论')
       } else {
@@ -74,7 +74,7 @@ export struct MyCommentsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -82,11 +82,12 @@ export struct MyCommentsPage {
     Row() {
       Text('<')
         .fontSize(22)
-        .fontColor('#007AFF')
+        .fontColor('#C05040')
         .onClick(() => router.back())
       Text(title)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
       Text(' ')
@@ -95,7 +96,7 @@ export struct MyCommentsPage {
     .width('100%')
     .height(56)
     .padding({ left: 16, right: 16 })
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -103,7 +104,7 @@ export struct MyCommentsPage {
     Column() {
       Text(message)
         .fontSize(15)
-        .fontColor('#999999')
+        .fontColor('#8B7355')
     }
     .width('100%')
     .layoutWeight(1)
@@ -118,6 +119,7 @@ export struct MyCommentsPage {
         Text(item.artifactTitle || '文物评论')
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')
           .layoutWeight(1)
         Text(formatReviewStatus(item.status))
           .fontSize(12)
@@ -128,12 +130,13 @@ export struct MyCommentsPage {
       if (item.replyTo) {
         Text(`回复 ${item.replyTo}`)
           .fontSize(12)
-          .fontColor('#5B6CFF')
+          .fontColor('#C05040')
           .margin({ top: 8 })
       }
 
       Text(item.content)
         .fontSize(15)
+        .fontColor('#3A3A3A')
         .lineHeight(22)
         .margin({ top: 8 })
         .width('100%')
@@ -141,11 +144,11 @@ export struct MyCommentsPage {
       Row() {
         Text(`评论点赞 ${item.likeCount || 0}`)
           .fontSize(12)
-          .fontColor('#666666')
+          .fontColor('#8B7355')
         Blank()
         Text(formatDateTime(item.createdAt))
           .fontSize(12)
-          .fontColor('#999999')
+          .fontColor('#8B7355')
       }
       .width('100%')
       .margin({ top: 10 })
@@ -153,7 +156,7 @@ export struct MyCommentsPage {
       if (item.artifactId) {
         Text('查看文物 >')
           .fontSize(13)
-          .fontColor('#007AFF')
+          .fontColor('#C05040')
           .margin({ top: 8 })
           .alignSelf(ItemAlign.End)
           .onClick(() => {
@@ -166,7 +169,7 @@ export struct MyCommentsPage {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')
     .borderRadius(12)
     .alignItems(HorizontalAlign.Start)
   }
