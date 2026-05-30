@@ -23,7 +23,7 @@ export struct EditProfilePage {
       Row() {
         Text('< 返回')
           .fontSize(14)
-          .fontColor('#007AFF')
+          .fontColor('#3A3A3A')
           .onClick(() => router.back())
         Blank()
       }
@@ -32,20 +32,37 @@ export struct EditProfilePage {
       Text('编辑个人资料')
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
         .width('100%')
         .margin({ bottom: 20 })
 
       TextInput({ placeholder: '个性签名', text: this.bio })
         .width('100%')
+        .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => { this.bio = value })
 
       TextInput({ placeholder: '头像链接', text: this.avatar })
         .width('100%')
+        .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => { this.avatar = value })
 
       Button('保存')
         .width('100%')
-        .backgroundColor('#007AFF')
+        .height(48)
+        .fontSize(18)
+        .fontColor(Color.White)
+        .backgroundColor('#C05040')
+        .borderRadius(8)
         .onClick(async () => {
           if (!this.username) {
             promptAction.showToast({ message: '未登录' });
@@ -57,7 +74,8 @@ export struct EditProfilePage {
         })
     }
     .width('100%')
+    .height('100%')                     // 关键：让背景色铺满全屏
     .padding(16)
-    .backgroundColor('#F8F8F8')
+    .backgroundColor('#F5F0E8')
   }
 }

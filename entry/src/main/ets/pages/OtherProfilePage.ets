@@ -57,7 +57,7 @@ export struct OtherProfilePage {
         LoadingProgress()
           .width(60)
           .height(60)
-          .color('#007AFF');
+          .color('#C05040');                      // 统一加载色
       } else {
         // 头部信息
         Column() {
@@ -70,20 +70,21 @@ export struct OtherProfilePage {
               .objectFit(ImageFit.Cover);
           } else {
             Circle({ width: 80, height: 80 })
-              .fill('#CCCCCC');
+              .fill('#E0D5C6');                    // 统一浅米色
           }
 
           // 用户名
           Text(this.profile.username)
             .fontSize(20)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')                  // 统一主文字色
             .margin({ top: 12 });
 
           // 个人简介（如果有且未被隐私隐藏）
           if (this.profile.bio) {
             Text(this.profile.bio)
               .fontSize(14)
-              .fontColor('#666666')
+              .fontColor('#8B7355')                // 统一辅助文字色
               .margin({ top: 8 })
               .maxLines(3);
           }
@@ -94,18 +95,20 @@ export struct OtherProfilePage {
 
         Divider()
           .strokeWidth(0.5)
+          .color('#E0D5C6')                        // 统一分割线色
           .margin({ top: 24 });
 
         // 收藏展示
         Text('公开的收藏')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')                    // 统一标题色
           .alignSelf(ItemAlign.Start)
           .margin({ left: 16, top: 16, bottom: 8 });
 
         if (this.favorites.length === 0) {
           Text('暂无公开收藏')
-            .fontColor('#999999')
+            .fontColor('#8B7355')                   // 辅助文字色
             .margin({ top: 20 });
         } else {
           List({ space: 12 }) {
@@ -116,17 +119,18 @@ export struct OtherProfilePage {
                     .width(60)
                     .height(60)
                     .borderRadius(8)
-                    .backgroundColor('#EEEEEE')
+                    .backgroundColor('#F2EDE8')     // 统一卡片背景
                     .objectFit(ImageFit.Cover);
 
                   Column() {
                     Text(item.title)
                       .fontSize(16)
                       .fontWeight(FontWeight.Medium)
+                      .fontColor('#3A3A3A')        // 主文字色
                       .maxLines(1);
                     Text(`${item.period} · ${item.museum}`)
                       .fontSize(12)
-                      .fontColor('#666666');
+                      .fontColor('#8B7355');        // 辅助文字色
                   }
                   .alignItems(HorizontalAlign.Start)
                   .padding({ left: 12 });
@@ -135,11 +139,11 @@ export struct OtherProfilePage {
 
                   Text('>')
                     .fontSize(16)
-                    .fontColor('#CCCCCC');
+                    .fontColor('#8B7355');          // 辅助箭头色
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor('#FFFFFF')
+                .backgroundColor('#F2EDE8')         // 统一卡片背景
                 .borderRadius(12)
                 .onClick(() => {
                   router.pushUrl({
@@ -157,6 +161,6 @@ export struct OtherProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5');
+    .backgroundColor('#F5F0E8');                    // 统一页面背景
   }
 }

@@ -65,8 +65,8 @@ export struct ProfilePage {
   build() {
     Column() {
       if (this.isLogin) {
+        // 头像与用户名区域
         Column() {
-          // 头像区域
           if (this.profile.avatar) {
             Image(this.profile.avatar)
               .width(80)
@@ -75,10 +75,10 @@ export struct ProfilePage {
               .objectFit(ImageFit.Cover)
               .margin({ top: 28 })
           } else {
-            // 默认头像：圆形灰色背景 + 用户名首字
+            // 默认头像：圆形背景 + 用户名首字
             Stack() {
               Circle({ width: 80, height: 80 })
-                .fill('#CCCCCC')
+                .fill('#E0D5C6')
               Text(this.username.charAt(0).toUpperCase())
                 .fontSize(32)
                 .fontColor('#FFFFFF')
@@ -91,17 +91,23 @@ export struct ProfilePage {
           Text(this.username)
             .fontSize(20)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')
             .margin({ top: 10 })
 
           if (this.profile.bio) {
             Text(this.profile.bio)
               .fontSize(14)
-              .fontColor('#666666')
+              .fontColor('#8B7355')
               .margin({ top: 4 })
               .maxLines(2)
+          } else {
+            Text('个人主页')
+              .fontSize(14)
+              .fontColor('#8B7355')
+              .margin({ top: 4 })
           }
 
-          // 统计数据
+          // 统计数据行
           Row({ space: 24 }) {
             this.StatItem('点赞', this.stats.likes)
             this.StatItem('收藏', this.stats.favorites)
@@ -109,39 +115,45 @@ export struct ProfilePage {
             this.StatItem('照片', this.stats.photos)
           }
           .margin({ top: 12, bottom: 8 })
-
-          Divider().strokeWidth(0.5).margin({ top: 8 })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
 
-        // 菜单
+        // 菜单卡片
         Column() {
           this.MenuItem('收藏夹', '📦', 'pages/MyFavoritesPage')
           this.MenuItem('浏览记录', '⏰', 'pages/MyHistoryPage')
           this.MenuItem('我的评论', '💬', 'pages/MyCommentsPage')
           this.MenuItem('上传的照片', '📷', 'pages/MyUploadsPage')
-          this.MenuItem('设置', '⚙️', 'pages/SettingsPage')
+          this.MenuItem('设置', '⚙️', 'pages/SettingsPage')   // 改回“设置”，跳转 SettingsPage
           Divider()
+            .strokeWidth(0.5)
+            .color('#E0D5C6')
           this.MenuItem('退出登录', '🚪', '')
         }
         .width('100%')
-        .margin({ top: 12 })
-        .padding({ left: 20, right: 20 })
+        .backgroundColor('#F2EDE8')
+        .borderRadius(12)
+        .padding({ top: 8, bottom: 8, left: 20, right: 20 })
+        .margin({ left: 12, right: 12, top: 18 })
       } else {
-        // 未登录界面
+        // 未登录状态
         Column({ space: 20 }) {
           Circle({ width: 80, height: 80 })
-            .fill('#CCCCCC')
+            .fill('#E0D5C6')
             .margin({ top: 72 })
 
           Text('未登录')
             .fontSize(18)
+            .fontColor('#3A3A3A')
 
           Button('去登录')
             .width(200)
             .height(44)
-            .backgroundColor('#007AFF')
+            .fontSize(16)
+            .fontColor(Color.White)
+            .backgroundColor('#C05040')
+            .borderRadius(8)
             .onClick(() => {
               router.pushUrl({ url: 'pages/LoginPage' });
             })
@@ -149,8 +161,9 @@ export struct ProfilePage {
           Button('注册账号')
             .width(200)
             .height(44)
-            .backgroundColor('transparent')
-            .fontColor('#007AFF')
+            .fontSize(14)
+            .backgroundColor(Color.Transparent)
+            .fontColor('#C05040')
             .onClick(() => {
               router.pushUrl({ url: 'pages/RegisterPage' });
             })
@@ -161,7 +174,7 @@ export struct ProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F8F8F8')
+    .backgroundColor('#F5F0E8')
     .onAppear(() => {
       this.refreshAll();
     })
@@ -178,9 +191,10 @@ export struct ProfilePage {
       Text(value.toString())
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
       Text(label)
         .fontSize(12)
-        .fontColor('#666666')
+        .fontColor('#8B7355')
     }
   }
 
@@ -193,12 +207,13 @@ export struct ProfilePage {
 
       Text(title)
         .fontSize(16)
+        .fontColor('#3A3A3A')
 
       Blank()
 
       Text('>')
         .fontSize(16)
-        .fontColor('#CCCCCC')
+        .fontColor('#8B7355')
     }
     .width('100%')
     .height(50)

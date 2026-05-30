@@ -13,7 +13,7 @@ export struct SettingsPage {
       Row() {
         Text('< 返回')
           .fontSize(14)
-          .fontColor('#007AFF')
+          .fontColor('#3A3A3A')          // 统一主文字色
           .onClick(() => router.back())
         Blank()
       }
@@ -23,26 +23,24 @@ export struct SettingsPage {
       Text('设置')
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')            // 统一标题色
         .width('100%')
         .padding({ left: 16, bottom: 24 })
 
       // 菜单列表
       List({ space: 12 }) {
-        // 编辑个人资料
         ListItem() {
           this.SettingMenuItem('编辑个人资料', '✏️', () => {
             router.pushUrl({ url: 'pages/EditProfilePage' });
           })
         }
 
-        // 修改密码
         ListItem() {
           this.SettingMenuItem('修改密码', '🔑', () => {
             router.pushUrl({ url: 'pages/ChangePasswordPage' });
           })
         }
 
-        // 隐私设置
         ListItem() {
           this.SettingMenuItem('隐私设置', '🔒', () => {
             router.pushUrl({ url: 'pages/PrivacySettingPage' });
@@ -54,12 +52,12 @@ export struct SettingsPage {
           Row() {
             Text('账号安全')
               .fontSize(16)
-              .fontColor('#CCCCCC')
+              .fontColor('#8B7355')      // 辅助文字色
             Blank()
           }
           .width('100%')
           .padding(16)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor('#F2EDE8')    // 统一卡片背景
           .borderRadius(12)
         }
       }
@@ -68,7 +66,7 @@ export struct SettingsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F8F8F8')
+    .backgroundColor('#F5F0E8')           // 统一页面背景
   }
 
   @Builder
@@ -80,16 +78,17 @@ export struct SettingsPage {
 
       Text(title)
         .fontSize(16)
+        .fontColor('#3A3A3A')            // 菜单文字色
 
       Blank()
 
       Text('>')
         .fontSize(18)
-        .fontColor('#CCCCCC')
+        .fontColor('#8B7355')            // 箭头使用辅助色
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')          // 统一卡片背景
     .borderRadius(12)
     .onClick(() => {
       if (!this.isLogin) {

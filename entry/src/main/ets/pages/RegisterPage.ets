@@ -19,9 +19,10 @@ export struct RegisterPage {
       Text('注册账号')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')                     // 统一标题色
         .margin({ top: 60, bottom: 40 })
 
-      // 类型选择按钮
+      // 类型选择按钮组
       Row() {
         ForEach(this.typeOptions, (item: string, index: number) => {
           Button(item)
@@ -29,8 +30,9 @@ export struct RegisterPage {
             .height(36)
             .layoutWeight(1)
             .margin({ left: index === 0 ? 0 : 8 })
-            .backgroundColor(this.registerType === (index === 0 ? 'phone' : 'email') ? '#007AFF' : '#E0E0E0')
-            .fontColor(this.registerType === (index === 0 ? 'phone' : 'email') ? '#FFFFFF' : '#333333')
+            .backgroundColor(this.registerType === (index === 0 ? 'phone' : 'email') ? '#C05040' : '#F2EDE8')
+            .fontColor(this.registerType === (index === 0 ? 'phone' : 'email') ? Color.White : '#3A3A3A')
+            .borderRadius(8)
             .onClick(() => {
               this.registerType = index === 0 ? 'phone' : 'email';
               this.accountValue = '';
@@ -40,13 +42,18 @@ export struct RegisterPage {
       .width('80%')
       .margin({ bottom: 16 })
 
-      // 根据类型显示输入框
+      // 根据类型显示不同输入框
       if (this.registerType === 'phone') {
         TextInput({ placeholder: '请输入手机号', text: this.accountValue })
           .type(InputType.PhoneNumber)
           .maxLength(11)
           .width('80%')
           .height(48)
+          .fontColor('#3A3A3A')
+          .placeholderColor('#999999')
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .border({ width: 1, color: '#E0D5C6' })
           .margin({ bottom: 16 })
           .onChange((value: string) => { this.accountValue = value; })
       } else {
@@ -54,6 +61,11 @@ export struct RegisterPage {
           .type(InputType.Email)
           .width('80%')
           .height(48)
+          .fontColor('#3A3A3A')
+          .placeholderColor('#999999')
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .border({ width: 1, color: '#E0D5C6' })
           .margin({ bottom: 16 })
           .onChange((value: string) => { this.accountValue = value; })
       }
@@ -61,6 +73,11 @@ export struct RegisterPage {
       TextInput({ placeholder: '设置用户名' })
         .width('80%')
         .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .margin({ bottom: 16 })
         .onChange((val: string) => this.username = val)
 
@@ -68,6 +85,11 @@ export struct RegisterPage {
         .width('80%')
         .height(48)
         .type(InputType.Password)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .margin({ bottom: 16 })
         .onChange((val: string) => this.password = val)
 
@@ -75,21 +97,30 @@ export struct RegisterPage {
         .width('80%')
         .height(48)
         .type(InputType.Password)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .margin({ bottom: 24 })
         .onChange((val: string) => this.confirmPwd = val)
 
       Button('注 册')
         .width('80%')
         .height(48)
-        .backgroundColor('#28A745')
+        .fontSize(18)
+        .fontColor(Color.White)
+        .backgroundColor('#C05040')
+        .borderRadius(8)
         .enabled(!this.isLoading)
         .onClick(() => { this.doRegister(); })
 
       Button('已有账号？去登录')
         .width('80%')
         .height(48)
-        .backgroundColor('transparent')
-        .fontColor('#007AFF')
+        .fontSize(14)
+        .backgroundColor(Color.Transparent)
+        .fontColor('#C05040')
         .margin({ top: 12 })
         .onClick(() => {
           router.back();
@@ -99,6 +130,7 @@ export struct RegisterPage {
         LoadingProgress()
           .width(40)
           .height(40)
+          .color('#C05040')                     // 加载指示器颜色适配
           .margin({ top: 20 });
       }
     }
@@ -106,6 +138,7 @@ export struct RegisterPage {
     .height('100%')
     .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#F5F0E8')                  // 统一页面背景米白
   }
 
   async doRegister() {

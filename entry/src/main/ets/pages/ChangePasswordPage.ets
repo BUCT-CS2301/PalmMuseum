@@ -18,44 +18,62 @@ export struct ChangePasswordPage {
       Row() {
         Text('< 返回')
           .fontSize(14)
-          .fontColor('#007AFF')
+          .fontColor('#3A3A3A')          // 统一主文字色
           .onClick(() => router.back())
         Blank()
       }
       .width('100%')
-      .padding(16)
 
       Text('修改密码')
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')            // 统一标题色
         .width('100%')
-        .padding({ left: 16, bottom: 24 })
+        .margin({ bottom: 20 })
 
       // 旧密码
       TextInput({ placeholder: '请输入旧密码' })
         .type(InputType.Password)
-        .width('90%')
+        .width('100%')
         .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => { this.oldPassword = value; })
 
       // 新密码
       TextInput({ placeholder: '请输入新密码' })
         .type(InputType.Password)
-        .width('90%')
+        .width('100%')
         .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => { this.newPassword = value; })
 
       // 确认新密码
       TextInput({ placeholder: '请确认新密码' })
         .type(InputType.Password)
-        .width('90%')
+        .width('100%')
         .height(48)
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
+        .borderRadius(8)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => { this.confirmNewPwd = value; })
 
       Button('确认修改')
-        .width('90%')
+        .width('100%')
         .height(48)
-        .backgroundColor('#007AFF')
+        .fontSize(18)
+        .fontColor(Color.White)
+        .backgroundColor('#C05040')      // 敦煌红主按钮
+        .borderRadius(8)
         .enabled(!this.isLoading)
         .onClick(() => { this.doChangePassword(); })
 
@@ -63,12 +81,14 @@ export struct ChangePasswordPage {
         LoadingProgress()
           .width(40)
           .height(40)
+          .color('#C05040')              // 加载指示器统一色
           .margin({ top: 20 });
       }
     }
     .width('100%')
-    .height('100%')
-    .backgroundColor('#F8F8F8')
+    .height('100%')                      // 背景铺满屏幕
+    .padding(16)
+    .backgroundColor('#F5F0E8')          // 统一米白背景
   }
 
   async doChangePassword() {
