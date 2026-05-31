@@ -712,6 +712,12 @@ export struct ArtifactDetailPage {
           .fontSize(level > 0 ? 13 : 14)
           .fontWeight(FontWeight.Medium)
           .fontColor('#3A3A3A')
+          .onClick(() => {
+            router.pushUrl({
+              url: 'pages/OtherProfilePage',
+              params: { username: item.username }
+            })
+          })
         Blank()
         Text(formatReviewStatus(item.status))
           .fontSize(12)
@@ -858,7 +864,7 @@ export struct ArtifactDetailPage {
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    this.likeSummary = await interactionStore.toggleLike(this.artifact.id, this.username);
+    this.likeSummary = await interactionStore.toggleLike(this.artifact.id, this.username, this.artifact);
     this.showToast(this.likeSummary.active ? '已点赞' : '已取消点赞');
   }
 
