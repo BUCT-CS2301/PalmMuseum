@@ -56,6 +56,15 @@ export interface HistoryItem {
   viewedAt: string;
 }
 
+export interface LikeItem {
+  artifactId: string;
+  title: string;
+  imageUrl: string;
+  period: string;
+  museum: string;
+  likedAt: string;
+}
+
 export interface CreatedAtItem {
   createdAt: string;
 }

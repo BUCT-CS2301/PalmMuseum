@@ -1,23 +1,39 @@
 // common/services/UserService.ets
 import { HttpApi } from '../network/HttpApi';
 
-// ---------- 接口定义 ----------
-export interface LoginResponse {
-  success: boolean;
-  username: string;
-}
+// ---------- 明确所有接口类型 ----------
 
-export interface RegisterResponse {
-  success: boolean;
+// 真实接口通用响应
+interface ApiResponse<T> {
+  code: number;
   message?: string;
+  data?: T;
 }
 
-export interface UserInfoResponse {
-  userId: string;
+// 登录接口返回的 data 结构
+interface LoginData {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+interface RegisterRequestBody {
   username: string;
-  avatar: string;
+  password: string;
+  role: string;
+  email?: string;
+  phone?: string;
 }
 
+// 本地 mock 用户类型
+interface MockUser {
+  username: string;
+  password: string;
+  email?: string;
+  phone?: string;
+}
+
+// 对外暴露的返回类型
 export interface LoginResult {
   success: boolean;
   username?: string;
@@ -42,199 +58,162 @@ export interface UserProfile {
   bio: string;
 }
 
-interface ChangePasswordRequest {
+interface CurrentUserData {
+  objectId: string;
   username: string;
-  oldPassword: string;
-  newPassword: string;
+  nickname: string;
+  avatar: string;
+  roles: string[];
 }
 
 export type RegisterType = 'email' | 'phone';
 
-// 请求体接口
-interface LoginRequest {
-  username: string;
-  password: string;
-}
+// ---------- 本地 mock 数据 ----------
+const USE_MOCK_PROFILE: boolean = true;
 
-interface RegisterRequest {
-  username: string;
-  password: string;
-  type: RegisterType;
-  value: string;
-}
-
-interface UpdateProfileRequest {
-  username: string;
-  avatar: string;
-  bio: string;
-}
-
-interface HuaweiLoginRequest {
-  // 暂时为空对象，后续可添加华为授权码等字段
-}
-
-interface MockUser {
-  username: string;
-  password: string;
-  email?: string;
-  phone?: string;
-}
-
-const USE_MOCK: boolean = true;
-
-const mockUsers: Array<MockUser> = [
-  { username: 'test', password: '123456', email: 'test@example.com' },
-  { username: 'admin', password: 'admin', phone: '13800138000' }
+const mockUsers: MockUser[] = [
+  { username: 'test', password: '123456', email: 'test@example.com' } as MockUser,
+  { username: 'admin', password: 'admin', phone: '13800138000' } as MockUser
 ];
 
 const userProfiles: Map<string, UserProfile> = new Map();
 
 export class UserService {
-  // ---------- 登录（用户名/邮箱/手机号 + 密码）----------
+  // ==================== 登录（真实接口） ====================
   static async login(account: string, password: string): Promise<LoginResult> {
-    if (USE_MOCK) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 800));
-      const user: MockUser | undefined = mockUsers.find(u =>
-      (u.username === account || u.email === account || u.phone === account) &&
-        u.password === password
-      );
-      if (user) {
-        return { success: true, username: user.username };
+    try {
+      const body: Record<string, string> = {
+        'username': account,
+        'password': password
+      };
+      const res = await HttpApi.post<ApiResponse<LoginData>>('/auth/login', body);
+      if (res.code === 200 && res.data) {
+        AppStorage.SetOrCreate('token', res.data.accessToken);
+        AppStorage.SetOrCreate('refreshToken', res.data.refreshToken);
+        const result: LoginResult = { success: true, username: account };
+        return result;
       } else {
-        return { success: false, message: '账号或密码错误' };
-      }
-    } else {
-      try {
-        const loginData: LoginRequest = { username: account, password };
-        const response: LoginResponse = await HttpApi.post<LoginResponse>('/login', loginData);
-        const result: LoginResult = { success: response.success, username: response.username };
-        return result;
-      } catch (e) {
-        const error = e as Error;
-        const result: LoginResult = { success: false, message: error.message || '网络错误' };
+        const msg: string = res.message ?? '账号或密码错误';
+        const result: LoginResult = { success: false, message: msg };
         return result;
       }
+    } catch (e) {
+      const errorMsg: string = (e as Error).message || '网络连接失败';
+      const result: LoginResult = { success: false, message: errorMsg };
+      return result;
     }
   }
 
-  // ---------- 注册（手机号或邮箱）----------
+  // ==================== 注册 ====================
   static async register(
     username: string,
     password: string,
     type: RegisterType,
     value: string
   ): Promise<RegisterResult> {
-    if (USE_MOCK) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 800));
-      if (!username || !password || !value) {
-        return { success: false, message: '信息填写不完整' };
-      }
-      const exists = mockUsers.some(u =>
-      u.username === username || u.email === value || u.phone === value
-      );
-      if (exists) {
-        return { success: false, message: '用户名或联系方式已被注册' };
-      }
-      const newUser: MockUser = { username, password };
-      if (type === 'email') {
-        newUser.email = value;
-      } else {
-        newUser.phone = value;
-      }
-      mockUsers.push(newUser);
-      userProfiles.set(username, { username, avatar: '', bio: '' });
-      return { success: true };
-    } else {
-      try {
-        const registerData: RegisterRequest = { username, password, type, value };
-        await HttpApi.post<RegisterResponse>('/register', registerData);
-        return { success: true };
-      } catch (e) {
-        const error = e as Error;
-        return { success: false, message: error.message || '注册失败' };
-      }
-    }
-  }
+    try {
+      const roleCode: string = 'USER';
 
-  // ---------- 华为一键登录（mock）----------
-  static async huaweiLogin(): Promise<LoginResult> {
-    if (USE_MOCK) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 600));
-      const huaweiUser: MockUser = {
-        username: 'huawei_test',
-        password: 'huawei123',
-        email: 'huawei@example.com'
+      const body: RegisterRequestBody = {
+        username: username,
+        password: password,
+        role: roleCode
       };
-      if (!mockUsers.some(u => u.username === huaweiUser.username)) {
-        mockUsers.push(huaweiUser);
-        userProfiles.set(huaweiUser.username, { username: huaweiUser.username, avatar: '', bio: '' });
+
+      if (type === 'email') {
+        body.email = value;
+      } else {
+        body.phone = value;
       }
-      return { success: true, username: huaweiUser.username };
-    } else {
-      try {
-        const huaweiLoginData: HuaweiLoginRequest = {};
-        const response: LoginResponse = await HttpApi.post<LoginResponse>('/huawei-login', huaweiLoginData);
-        return { success: response.success, username: response.username };
-      } catch (e) {
-        const error = e as Error;
-        return { success: false, message: error.message || '华为登录失败' };
-      }
+
+      await HttpApi.post<ApiResponse<Object>>('/users', body);
+      const result: RegisterResult = { success: true };
+      return result;
+    } catch (e) {
+      const error = e as Error;
+      const result: RegisterResult = { success: false, message: error.message || '注册失败' };
+      return result;
     }
   }
 
-  // ---------- 获取用户资料 ----------
+  // ==================== 华为登录（暂用 mock） ====================
+  static async huaweiLogin(): Promise<LoginResult> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 600));
+    const huaweiUser: MockUser = {
+      username: 'huawei_test',
+      password: 'huawei123',
+      email: 'huawei@example.com'
+    };
+    if (!mockUsers.some(u => u.username === huaweiUser.username)) {
+      mockUsers.push(huaweiUser);
+      userProfiles.set(huaweiUser.username, {
+        username: huaweiUser.username,
+        avatar: '',
+        bio: ''
+      });
+    }
+    const result: LoginResult = { success: true, username: huaweiUser.username };
+    return result;
+  }
+
+  // ==================== 获取用户资料 ====================
   static async getProfile(username: string): Promise<UserProfile> {
-    if (USE_MOCK) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      const profile = userProfiles.get(username);
-      return profile || { username, avatar: '', bio: '' };
-    } else {
-      try {
-        const response = await HttpApi.get<UserProfile>(`/user/profile/${username}`);
-        return response;
-      } catch (e) {
-        console.error('获取用户资料失败', JSON.stringify(e));
-        return { username, avatar: '', bio: '' };
+    try {
+      const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
+      if (res.code === 200 && res.data) {
+        const data = res.data;
+        // 用 nickname 作为 bio（或者你自己加个 bio 字段，文档里没有）
+        return {
+          username: data.username,
+          avatar: data.avatar || '',
+          bio: data.nickname || ''   // 暂时用昵称代替简介
+        };
       }
+    } catch (e) {
+      console.error('获取当前用户失败', JSON.stringify(e));
     }
+    // 失败时返回空
+    return { username: username, avatar: '', bio: '' };
   }
 
-  // ---------- 更新用户资料 ----------
+  // ==================== 更新用户资料（暂用 mock） ====================
   static async updateProfile(username: string, avatar: string, bio: string): Promise<void> {
-    if (USE_MOCK) {
+    if (USE_MOCK_PROFILE) {
       await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      userProfiles.set(username, { username, avatar, bio });
+      const profile: UserProfile = { username: username, avatar: avatar, bio: bio };
+      userProfiles.set(username, profile);
     } else {
-      const updateData: UpdateProfileRequest = { username, avatar, bio };
-      await HttpApi.post<void>('/user/profile', updateData);
+      const body: Record<string, string> = {
+        'username': username,
+        'avatar': avatar,
+        'bio': bio
+      };
+      await HttpApi.post<ApiResponse<Object>>('/user/profile', body);
     }
   }
 
-  // ---------- 修改密码 ----------
+  // ==================== 修改密码（暂用 mock） ====================
   static async changePassword(
     username: string,
     oldPassword: string,
     newPassword: string
   ): Promise<boolean> {
-    if (USE_MOCK) {
+    if (USE_MOCK_PROFILE) {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      const userIndex = mockUsers.findIndex(u => u.username === username);
-      if (userIndex === -1) {
+      const idx: number = mockUsers.findIndex(u => u.username === username);
+      if (idx === -1 || mockUsers[idx].password !== oldPassword) {
         return false;
       }
-      if (mockUsers[userIndex].password !== oldPassword) {
-        return false;
-      }
-      mockUsers[userIndex].password = newPassword;
+      mockUsers[idx].password = newPassword;
       return true;
     } else {
       try {
-        const changePwdData: ChangePasswordRequest = {
-          username,
-          oldPassword,
-          newPassword
+        const body: Record<string, string> = {
+          'username': username,
+          'oldPassword': oldPassword,
+          'newPassword': newPassword
         };
-        await HttpApi.post<void>('/user/change-password', changePwdData);
+        await HttpApi.post<ApiResponse<Object>>('/user/change-password', body);
         return true;
       } catch (e) {
         console.error('修改密码失败', JSON.stringify(e));
@@ -243,37 +222,15 @@ export class UserService {
     }
   }
 
-  // ---------- 保留原有的 getUserInfo ----------
+  // ==================== 获取用户信息（暂用 mock） ====================
   static async getUserInfo(userId: string): Promise<UserInfo> {
-    if (USE_MOCK) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      const result: UserInfo = {
-        userId: userId,
-        username: `用户${userId.slice(-4)}`,
-        avatar: '',
-        favorites: []
-      };
-      return result;
-    } else {
-      try {
-        const response: UserInfoResponse = await HttpApi.get<UserInfoResponse>(`/user/${userId}`);
-        const result: UserInfo = {
-          userId: response.userId,
-          username: response.username,
-          avatar: response.avatar,
-          favorites: []
-        };
-        return result;
-      } catch (e) {
-        const error = e as Error;
-        const fallback: UserInfo = {
-          userId: userId,
-          username: '未知用户',
-          avatar: '',
-          favorites: []
-        };
-        return fallback;
-      }
-    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    const info: UserInfo = {
+      userId: userId,
+      username: `用户${userId.slice(-4)}`,
+      avatar: '',
+      favorites: []
+    };
+    return info;
   }
 }

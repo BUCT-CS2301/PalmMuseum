@@ -183,7 +183,7 @@ export struct RegisterPage {
       AppStorage.SetOrCreate('isLogin', true);
       AppStorage.SetOrCreate('username', this.username);
       promptAction.showToast({ message: '注册成功，已自动登录' });
-      router.back();
+      router.replaceUrl({ url: 'pages/ProfilePage' });
     } else {
       promptAction.showToast({ message: result.message || '注册失败' });
     }

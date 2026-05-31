@@ -16,6 +16,7 @@
     "pages/OtherProfilePage",
     "pages/SettingsPage",
     "pages/EditProfilePage",
-    "pages/ChangePasswordPage"
+    "pages/ChangePasswordPage",
+    "pages/MyLikesPage"
   ]
 }
