@@ -54,14 +54,16 @@ export struct MyUploadsPage {
 
   build() {
     Column() {
+      // 顶栏
       Row() {
         Text('<')
           .fontSize(22)
-          .fontColor('#007AFF')
+          .fontColor('#C05040')            // 敦煌红返回箭头
           .onClick(() => router.back())
         Text('上传的照片')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')            // 主文字色
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
         Text(' ')
@@ -70,14 +72,18 @@ export struct MyUploadsPage {
       .width('100%')
       .height(56)
       .padding({ left: 16, right: 16 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('#F5F0E8')          // 与页面背景融合
 
       Scroll() {
         Column({ space: 16 }) {
           this.UploadEditor()
 
           if (this.isLoading) {
-            LoadingProgress().width(40).height(40).margin({ top: 24 })
+            LoadingProgress()
+              .width(40)
+              .height(40)
+              .margin({ top: 24 })
+              .color('#C05040')
           } else if (this.uploads.length === 0) {
             this.EmptyHint('还没有上传照片，先挑一张参观照片吧')
           } else {
@@ -97,7 +103,7 @@ export struct MyUploadsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F0E8')
   }
 
   @Builder
@@ -106,18 +112,22 @@ export struct MyUploadsPage {
       Text('上传参观照片')
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')               // 标题主色
         .alignSelf(ItemAlign.Start)
 
       Text('照片会先进入审核，可补充拍摄地点和一句简短说明。')
         .fontSize(13)
-        .fontColor('#666666')
+        .fontColor('#8B7355')               // 辅助文字色
         .alignSelf(ItemAlign.Start)
 
       TextInput({ placeholder: '拍摄地点，例如：大英博物馆东馆', text: this.draftLocation })
         .height(44)
         .width('100%')
-        .backgroundColor('#F7F8FA')
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
         .borderRadius(10)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => {
           this.draftLocation = value;
         })
@@ -125,8 +135,11 @@ export struct MyUploadsPage {
       TextInput({ placeholder: '简短说明，例如：现场人很多，但这件器物很震撼', text: this.draftDescription })
         .height(44)
         .width('100%')
-        .backgroundColor('#F7F8FA')
+        .fontColor('#3A3A3A')
+        .placeholderColor('#999999')
+        .backgroundColor('#FFFFFF')
         .borderRadius(10)
+        .border({ width: 1, color: '#E0D5C6' })
         .onChange((value: string) => {
           this.draftDescription = value;
         })
@@ -135,7 +148,7 @@ export struct MyUploadsPage {
         .width('100%')
         .height(44)
         .fontSize(15)
-        .backgroundColor('#5B6CFF')
+        .backgroundColor('#C05040')         // 敦煌红按钮
         .fontColor(Color.White)
         .enabled(!this.isUploading)
         .onClick(() => {
@@ -144,7 +157,7 @@ export struct MyUploadsPage {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')             // 暖米色卡片
     .borderRadius(12)
     .alignItems(HorizontalAlign.Start)
   }
@@ -154,7 +167,7 @@ export struct MyUploadsPage {
     Column() {
       Text(message)
         .fontSize(15)
-        .fontColor('#999999')
+        .fontColor('#8B7355')               // 辅助色提示
     }
     .width('100%')
     .padding({ top: 24, bottom: 8 })
@@ -169,28 +182,29 @@ export struct MyUploadsPage {
         .height(180)
         .borderRadius(8)
         .objectFit(ImageFit.Cover)
-        .backgroundColor('#DDDDDD')
+        .backgroundColor('#E0D5C6')          // 浅米色占位
 
       Row() {
         Column() {
           Text(item.artifactTitle || '未关联文物')
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')
           if (item.location) {
             Text(`拍摄地点：${item.location}`)
               .fontSize(13)
-              .fontColor('#666666')
+              .fontColor('#8B7355')
               .margin({ top: 4 })
           }
           if (item.description) {
             Text(item.description)
               .fontSize(13)
-              .fontColor('#666666')
+              .fontColor('#8B7355')
               .margin({ top: 4 })
           }
           Text(formatDateTime(item.createdAt))
             .fontSize(12)
-            .fontColor('#999999')
+            .fontColor('#8B7355')
             .margin({ top: 6 })
         }
         .alignItems(HorizontalAlign.Start)
@@ -205,7 +219,7 @@ export struct MyUploadsPage {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('#F2EDE8')             // 暖米色卡片
     .borderRadius(12)
     .alignItems(HorizontalAlign.Start)
   }

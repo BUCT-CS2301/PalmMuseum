@@ -1,7 +1,7 @@
+// pages/ProfilePage.ets
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
-import { UserInteractionStats } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { UserService, UserProfile } from '../common/services/UserService';
 
 @Entry
 @Component
@@ -9,90 +9,109 @@ export struct ProfilePage {
   @StorageLink('isLogin') isLogin: boolean = false;
   @StorageLink('username') username: string = '';
   @StorageLink('interactionVersion') @Watch('onInteractionVersionChange') interactionVersion: number = 0;
-  @StorageLink('profileLikes') profileLikes: number = 0;
-  @StorageLink('profileFavorites') profileFavorites: number = 0;
-  @StorageLink('profileComments') profileComments: number = 0;
-  @StorageLink('profilePhotos') profilePhotos: number = 0;
-
-  @State stats: UserInteractionStats = {
-    likes: 0,
-    favorites: 0,
-    comments: 0,
-    photos: 0,
-    history: 0
-  };
+  @State profile: UserProfile = { username: '', avatar: '', bio: '' };
 
   aboutToAppear() {
-    this.refreshStats();
+    this.loadProfile();
   }
 
-  private async refreshStats() {
+  private async loadProfile() {
     if (!this.isLogin || !this.username) {
-      this.stats = { likes: 0, favorites: 0, comments: 0, photos: 0, history: 0 };
-      this.profileLikes = 0;
-      this.profileFavorites = 0;
-      this.profileComments = 0;
-      this.profilePhotos = 0;
+      this.profile = { username: '', avatar: '', bio: '' };
       return;
     }
-
-    this.stats = await interactionStore.getStats(this.username);
-    this.profileLikes = this.stats.likes;
-    this.profileFavorites = this.stats.favorites;
-    this.profileComments = this.stats.comments;
-    this.profilePhotos = this.stats.photos;
+    this.profile = await UserService.getProfile(this.username);
+    console.info('===== 获取到的用户资料：', JSON.stringify(this.profile));
   }
 
   private onInteractionVersionChange(): void {
-    this.refreshStats();
+    this.loadProfile();
   }
 
   build() {
     Column() {
       if (this.isLogin) {
+        // 头像与用户名区域
         Column() {
-          Circle({ width: 80, height: 80 })
-            .fill('#CCCCCC')
+          if (this.profile.avatar) {
+            Image(this.profile.avatar)
+              .width(80)
+              .height(80)
+              .borderRadius(40)
+              .objectFit(ImageFit.Cover)
+              .margin({ top: 28 })
+          } else {
+            // 默认头像：圆形背景 + 用户名首字
+            Stack() {
+              Circle({ width: 80, height: 80 })
+                .fill('#E0D5C6')
+              Text(this.username.charAt(0).toUpperCase())
+                .fontSize(32)
+                .fontColor('#FFFFFF')
+            }
+            .width(80)
+            .height(80)
             .margin({ top: 28 })
+          }
 
           Text(this.username)
             .fontSize(20)
             .fontWeight(FontWeight.Medium)
+            .fontColor('#3A3A3A')
             .margin({ top: 10 })
 
-          Text('个人主页')
-            .fontSize(14)
-            .fontColor('#666666')
-            .margin({ top: 4 })
+          if (this.profile.bio) {
+            Text(this.profile.bio)
+              .fontSize(14)
+              .fontColor('#8B7355')
+              .margin({ top: 4 })
+              .maxLines(2)
+          } else {
+            Text('个人主页')
+              .fontSize(14)
+              .fontColor('#8B7355')
+              .margin({ top: 4 })
+          }
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
 
+        // 菜单卡片
         Column() {
           this.MenuItem('收藏夹', '📦', 'pages/MyFavoritesPage')
           this.MenuItem('浏览记录', '⏰', 'pages/MyHistoryPage')
+          this.MenuItem('我的点赞', '❤️', 'pages/MyLikesPage')
           this.MenuItem('我的评论', '💬', 'pages/MyCommentsPage')
           this.MenuItem('上传的照片', '📷', 'pages/MyUploadsPage')
-          this.MenuItem('隐私设置', '🔒', 'pages/PrivacySettingPage')
+          this.MenuItem('设置', '⚙️', 'pages/SettingsPage')
           Divider()
+            .strokeWidth(0.5)
+            .color('#E0D5C6')
           this.MenuItem('退出登录', '🚪', '')
         }
         .width('100%')
-        .margin({ top: 18 })
-        .padding({ left: 20, right: 20 })
+        .backgroundColor('#F2EDE8')
+        .borderRadius(12)
+        .padding({ top: 8, bottom: 8, left: 20, right: 20 })
+        .margin({ left: 12, right: 12, top: 18 })
       } else {
+        // 未登录状态
         Column({ space: 20 }) {
           Circle({ width: 80, height: 80 })
-            .fill('#CCCCCC')
+            .fill('#E0D5C6')
             .margin({ top: 72 })
 
           Text('未登录')
             .fontSize(18)
+            .fontColor('#3A3A3A')
 
           Button('去登录')
             .width(200)
             .height(44)
-            .backgroundColor('#007AFF')
+            .fontSize(16)
+            .fontColor(Color.White)
+            .backgroundColor('#C05040')
+            .borderRadius(8)
             .onClick(() => {
               router.pushUrl({ url: 'pages/LoginPage' });
             })
@@ -100,8 +119,9 @@ export struct ProfilePage {
           Button('注册账号')
             .width(200)
             .height(44)
-            .backgroundColor('transparent')
-            .fontColor('#007AFF')
+            .fontSize(14)
+            .backgroundColor(Color.Transparent)
+            .fontColor('#C05040')
             .onClick(() => {
               router.pushUrl({ url: 'pages/RegisterPage' });
             })
@@ -112,13 +132,13 @@ export struct ProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F8F8F8')
+    .backgroundColor('#F5F0E8')
     .onAppear(() => {
-      this.refreshStats();
+      this.loadProfile();
     })
     .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number) => {
       if (isVisible && currentRatio > 0) {
-        this.refreshStats();
+        this.loadProfile();
       }
     })
   }
@@ -132,12 +152,13 @@ export struct ProfilePage {
 
       Text(title)
         .fontSize(16)
+        .fontColor('#3A3A3A')
 
       Blank()
 
       Text('>')
         .fontSize(16)
-        .fontColor('#CCCCCC')
+        .fontColor('#8B7355')
     }
     .width('100%')
     .height(50)
@@ -162,11 +183,8 @@ export struct ProfilePage {
   doLogout() {
     AppStorage.SetOrCreate('isLogin', false);
     AppStorage.SetOrCreate('username', '');
-    AppStorage.SetOrCreate('profileLikes', 0);
-    AppStorage.SetOrCreate('profileFavorites', 0);
-    AppStorage.SetOrCreate('profileComments', 0);
-    AppStorage.SetOrCreate('profilePhotos', 0);
-    this.refreshStats();
+    AppStorage.SetOrCreate('userId', '');
+    this.loadProfile();
     promptAction.showToast({ message: '已退出登录' });
   }
 }

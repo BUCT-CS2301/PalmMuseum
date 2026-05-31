@@ -8,6 +8,7 @@ import {
   FavoriteItem,
   HistoryItem,
   InteractionSummary,
+  LikeItem,          // 新增导入
   PrivacySettings,
   ReviewStatus,
   UploadedPhotoItem,
@@ -27,6 +28,7 @@ const COMMENT_REVIEW_DELAY_MS = 1500;
 
 class InteractionStore {
   private readonly likeKey = 'pm.likes';
+  private readonly likeItemsKey = 'pm.likeItems';
   private readonly favoriteKey = 'pm.favorites';
   private readonly favoriteGroupKey = 'pm.favoriteGroups';
   private readonly commentKey = 'pm.comments';
@@ -291,6 +293,18 @@ class InteractionStore {
     };
   }
 
+  // 新增：构建 LikeItem 快照
+  private buildLikeItem(artifact: Artifact): LikeItem {
+    return {
+      artifactId: artifact.id,
+      title: artifact.title,
+      imageUrl: artifact.imageUrl,
+      period: artifact.period,
+      museum: artifact.museum,
+      likedAt: new Date().toISOString()
+    };
+  }
+
   private async getCommentLikeMap(): Promise<Map<string, string[]>> {
     const commentLikeObj = await this.getJsonValue<Record<string, string[]>>(this.commentLikeKey, {});
     return this.objectToMap<string[]>(commentLikeObj);
@@ -317,7 +331,9 @@ class InteractionStore {
     };
   }
 
-  async toggleLike(artifactId: string, username: string): Promise<InteractionSummary> {
+  // 修改后的 toggleLike，支持 artifact 参数
+  async toggleLike(artifactId: string, username: string, artifact?: Artifact): Promise<InteractionSummary> {
+    // 1. 更新旧存储（文物→用户列表）
     const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
     const likeMap = this.objectToMap<string[]>(likeObj);
     const users = likeMap.get(artifactId) || [];
@@ -329,8 +345,61 @@ class InteractionStore {
     }
     likeMap.set(artifactId, users);
     await this.setJsonValue(this.likeKey, this.mapToObject(likeMap));
+
+    // 2. 更新新存储（用户→LikeItem[]），如果提供了 artifact 则同步快照
+    if (artifact) {
+      const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
+      const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
+      let userItems = likeItemsMap.get(username) || [];
+      if (existingIndex > -1) {
+        // 取消点赞，移除该文物快照
+        userItems = userItems.filter(item => item.artifactId !== artifactId);
+      } else {
+        // 点赞，插入快照
+        const newItem = this.buildLikeItem(artifact);
+        userItems = [newItem, ...userItems];
+      }
+      likeItemsMap.set(username, userItems);
+      await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
+    }
+
     await this.syncProfileStats(username);
     return this.getLikeSummary(artifactId, username);
+  }
+
+  // 新增：获取用户点赞文物列表
+  async getLikes(username: string): Promise<LikeItem[]> {
+    if (!username) {
+      return [];
+    }
+    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
+    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
+    return likeItemsMap.get(username) || [];
+  }
+
+  // 新增：取消点赞（无需 artifact 对象）
+  async removeLike(artifactId: string, username: string): Promise<void> {
+    // 1. 更新旧存储（文物→用户列表）
+    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
+    const likeMap = this.objectToMap<string[]>(likeObj);
+    const users = likeMap.get(artifactId) || [];
+    const idx = users.indexOf(username);
+    if (idx > -1) {
+      users.splice(idx, 1);
+      likeMap.set(artifactId, users);
+      await this.setJsonValue(this.likeKey, this.mapToObject(likeMap));
+    }
+
+    // 2. 从用户点赞快照中移除
+    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
+    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
+    let userItems = likeItemsMap.get(username) || [];
+    userItems = userItems.filter(item => item.artifactId !== artifactId);
+    likeItemsMap.set(username, userItems);
+    await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
+
+    // 3. 更新统计数据
+    await this.syncProfileStats(username);
   }
 
   async getFavoriteSummary(artifactId: string, username: string = ''): Promise<InteractionSummary> {

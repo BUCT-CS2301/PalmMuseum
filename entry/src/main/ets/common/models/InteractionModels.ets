@@ -1,3 +1,4 @@
+// common/models/InteractionModels.ets
 export enum ReviewStatus {
   Pending = 'pending',
   Approved = 'approved'
@@ -55,12 +56,22 @@ export interface HistoryItem {
   viewedAt: string;
 }
 
+export interface LikeItem {
+  artifactId: string;
+  title: string;
+  imageUrl: string;
+  period: string;
+  museum: string;
+  likedAt: string;
+}
+
 export interface CreatedAtItem {
   createdAt: string;
 }
 
 export interface PrivacySettings {
   showFavorites: boolean;
+  showLikes: boolean;
   showComments: boolean;
   showPhotos: boolean;
 }
@@ -89,6 +100,7 @@ export interface InteractionSummary {
 
 export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   showFavorites: true,
+  showLikes: true,
   showComments: true,
   showPhotos: true
 };
