@@ -541,7 +541,9 @@ class InteractionStore {
     const likeMap = await this.getCommentLikeMap();
     const users = likeMap.get(commentId) || [];
     const existingIndex = users.indexOf(username);
-    if (existingIndex === -1) {
+    if (existingIndex > -1) {
+      users.splice(existingIndex, 1);
+    } else {
       users.unshift(username);
     }
     likeMap.set(commentId, users);
@@ -590,7 +592,7 @@ class InteractionStore {
     comments.unshift(record);
     await this.setJsonValue(this.commentKey, comments);
     await this.syncProfileStats(username);
-    return { ok: true, message: '评论已提交，等待审核' };
+    return { ok: true, message: '评论已发布，约 1.5 秒后自动通过审核' };
   }
 
   async getUserComments(username: string): Promise<CommentItem[]> {
