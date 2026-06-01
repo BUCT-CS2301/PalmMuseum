@@ -698,18 +698,52 @@ class InteractionStore {
 
   async getPrivacy(username: string): Promise<PrivacySettings> {
     if (!username) {
-      return DEFAULT_PRIVACY_SETTINGS;
+      return {
+        showFavorites: true,
+        showLikes: true,
+        showComments: true,
+        showPhotos: true
+      };
     }
+
     const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
     const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
-    return privacyMap.get(username) || DEFAULT_PRIVACY_SETTINGS;
+    const saved = privacyMap.get(username);
+
+    if (!saved) {
+      return {
+        showFavorites: true,
+        showLikes: true,
+        showComments: true,
+        showPhotos: true
+      };
+    }
+
+    return {
+      showFavorites: saved.showFavorites,
+      showLikes: saved.showLikes,
+      showComments: saved.showComments,
+      showPhotos: saved.showPhotos
+    };
   }
 
   async savePrivacy(username: string, privacy: PrivacySettings): Promise<void> {
+    if (!username) {
+      throw new Error('[InteractionStore] savePrivacy 失败：username 为空');
+    }
+
     const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
     const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
-    privacyMap.set(username, privacy);
+
+    privacyMap.set(username, {
+      showFavorites: privacy.showFavorites,
+      showLikes: privacy.showLikes,
+      showComments: privacy.showComments,
+      showPhotos: privacy.showPhotos
+    });
+
     await this.setJsonValue(this.privacyKey, this.mapToObject(privacyMap));
+    console.info(`[InteractionStore] 保存隐私设置成功 username=${username}, privacy=${JSON.stringify(privacy)}`);
   }
 
   async getStats(username: string): Promise<UserInteractionStats> {
