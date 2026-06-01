@@ -11,6 +11,7 @@ import { interactionStore } from '../common/store/InteractionStore';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
 import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
+import { QaImage, QaSource } from '../common/services/QaChatService';
 
 interface RelatedEntity {
   title: string;
@@ -47,6 +48,13 @@ export struct ArtifactDetailPage {
   @State allImageUrls: string[] = [];
   @State currentVoiceSpeed: number = 1;
   @State voiceProgressText: string = '0 / 0';
+  @State voiceQuestionInput: string = '';
+  @State voiceQuestionText: string = '';
+  @State voiceAnswerText: string = '';
+  @State voiceAnswerSources: QaSource[] = [];
+  @State voiceAnswerImages: QaImage[] = [];
+  @State isVoiceAsking: boolean = false;
+  @State isRecognizingQuestion: boolean = false;
 
   aboutToAppear() {
     this.clearReviewRefreshTimer();
@@ -69,6 +77,13 @@ export struct ArtifactDetailPage {
     this.offsetX = 0;
     this.offsetY = 0;
     this.commentInput = '';
+    this.voiceQuestionInput = '';
+    this.voiceQuestionText = '';
+    this.voiceAnswerText = '';
+    this.voiceAnswerSources = [];
+    this.voiceAnswerImages = [];
+    this.isVoiceAsking = false;
+    this.isRecognizingQuestion = false;
     this.replyTarget = null;
     this.uploadDescription = '';
     this.uploadLocation = this.artifact.museum;
@@ -421,20 +436,135 @@ export struct ArtifactDetailPage {
           .fontSize(15)
           .backgroundColor('#8B7355')
           .fontColor(Color.White)
+          .enabled(!this.isVoiceAsking)
           .onClick(async () => {
-            if (this.artifact !== null) {
-              try {
-                const answer = MuseumVoiceService.answerQuestion(this.artifact, '这个文物收藏在哪个博物馆');
-                await MuseumVoiceService.speak(answer, this.currentVoiceSpeed);
-                this.voiceProgressText = MuseumVoiceService.getProgressText();
-                this.showToast(answer);
-              } catch (error) {
-                this.showToast('语音问答暂不可用');
-              }
-            }
+            await this.handleAskVoiceQuestion();
           })
       }
       .width('100%')
+
+      Column({ space: 10 }) {
+        Text('AI 语音问答')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')
+          .alignSelf(ItemAlign.Start)
+
+        TextInput({
+          placeholder: '输入关于该文物的问题，例如：它收藏在哪里？',
+          text: this.voiceQuestionInput
+        })
+          .width('100%')
+          .height(44)
+          .backgroundColor('#FFFFFF')
+          .borderRadius(8)
+          .enabled(!this.isVoiceAsking)
+          .onChange((value: string) => {
+            this.voiceQuestionInput = value;
+          })
+
+        Row({ space: 8 }) {
+          Button(this.isVoiceAsking ? '生成中...' : '提问并播报')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#C05040')
+            .fontColor(Color.White)
+            .enabled(!this.isVoiceAsking)
+            .onClick(async () => {
+              await this.handleAskVoiceQuestion();
+            })
+
+          Button(this.isRecognizingQuestion ? '识别中...' : '语音提问')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#8B7355')
+            .fontColor(Color.White)
+            .enabled(!this.isVoiceAsking)
+            .onClick(() => {
+              this.handleStartVoiceQuestion();
+            })
+
+          Button('结束识别')
+            .layoutWeight(1)
+            .height(38)
+            .fontSize(14)
+            .backgroundColor('#F2EDE8')
+            .fontColor('#8B7355')
+            .enabled(this.isRecognizingQuestion)
+            .onClick(() => {
+              this.finishVoiceQuestionRecognition();
+            })
+        }
+        .width('100%')
+
+        if (this.voiceQuestionText.length > 0 || this.voiceAnswerText.length > 0 || this.isVoiceAsking) {
+          Column({ space: 8 }) {
+            if (this.voiceQuestionText.length > 0) {
+              Text(`问题：${this.voiceQuestionText}`)
+                .fontSize(13)
+                .fontColor('#8B7355')
+                .lineHeight(20)
+                .alignSelf(ItemAlign.Start)
+            }
+
+            Text(this.voiceAnswerText.length > 0 ? this.voiceAnswerText : '正在生成回答...')
+              .fontSize(14)
+              .fontColor('#3A3A3A')
+              .lineHeight(22)
+              .width('100%')
+
+            if (this.voiceAnswerSources.length > 0) {
+              Column({ space: 4 }) {
+                Text('参考来源')
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor('#8B7355')
+                  .alignSelf(ItemAlign.Start)
+
+                ForEach(this.voiceAnswerSources, (source: QaSource, index: number) => {
+                  Text(source.url.length > 0 ? `${source.name}：${source.url}` : source.name)
+                    .fontSize(12)
+                    .fontColor('#8B7355')
+                    .maxLines(2)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                }, (source: QaSource, index: number) => index.toString())
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+
+            if (this.voiceAnswerImages.length > 0) {
+              Scroll() {
+                Row({ space: 8 }) {
+                  ForEach(this.voiceAnswerImages, (image: QaImage, index: number) => {
+                    Image(image.url)
+                      .width(96)
+                      .height(72)
+                      .objectFit(ImageFit.Cover)
+                      .borderRadius(8)
+                      .alt($r('app.media.startIcon'))
+                  }, (image: QaImage, index: number) => index.toString())
+                }
+                .padding({ top: 4, bottom: 4 })
+              }
+              .scrollable(ScrollDirection.Horizontal)
+              .scrollBar(BarState.Off)
+              .width('100%')
+            }
+          }
+          .width('100%')
+          .padding(10)
+          .backgroundColor('#F7F3ED')
+          .borderRadius(10)
+          .alignItems(HorizontalAlign.Start)
+        }
+      }
+      .width('100%')
+      .padding(12)
+      .backgroundColor(Color.Transparent)
 
       Column({ space: 10 }) {
         Text('语音播放控制')
@@ -853,6 +983,105 @@ export struct ArtifactDetailPage {
         .fontColor('#3A3A3A')
         .margin({ top: 4 })
     }
+  }
+
+  private buildDefaultVoiceQuestion(): string {
+    if (!this.artifact) {
+      return '';
+    }
+
+    const input = this.voiceQuestionInput.trim();
+    if (input.length > 0) {
+      return input;
+    }
+
+    return `${this.artifact.title}收藏在哪个博物馆？`;
+  }
+
+  private buildAiQuestion(rawQuestion: string): string {
+    if (!this.artifact) {
+      return rawQuestion.trim();
+    }
+
+    const question = rawQuestion.trim();
+    return `当前文物信息：名称是${this.artifact.title}，年代是${this.artifact.period}，类型是${this.artifact.type}，材质是${this.artifact.material}，收藏机构是${this.artifact.museum}，简介是${this.artifact.description}。用户问题：${question}`;
+  }
+
+  private async handleAskVoiceQuestion(rawQuestion?: string) {
+    if (!this.artifact || this.isVoiceAsking) {
+      return;
+    }
+
+    const displayQuestion = (rawQuestion || this.buildDefaultVoiceQuestion()).trim();
+    if (displayQuestion.length === 0) {
+      this.showToast('请输入或说出问题');
+      return;
+    }
+
+    this.voiceQuestionInput = displayQuestion;
+    this.voiceQuestionText = displayQuestion;
+    this.voiceAnswerText = '';
+    this.voiceAnswerSources = [];
+    this.voiceAnswerImages = [];
+    this.isVoiceAsking = true;
+
+    try {
+      const answer = await MuseumVoiceService.askAiQuestionAndSpeak(
+        this.buildAiQuestion(displayQuestion),
+        this.currentVoiceSpeed,
+        {
+          onAnswerUpdate: (text: string) => {
+            this.voiceAnswerText = text;
+          },
+          onSource: (source: QaSource) => {
+            this.voiceAnswerSources = [...this.voiceAnswerSources, source];
+          },
+          onImage: (image: QaImage) => {
+            this.voiceAnswerImages = [...this.voiceAnswerImages, image];
+          }
+        }
+      );
+
+      this.voiceAnswerText = answer.answer;
+      this.voiceAnswerSources = answer.sources;
+      this.voiceAnswerImages = answer.images;
+      this.voiceProgressText = MuseumVoiceService.getProgressText();
+      this.showToast('AI回答已生成并开始播报');
+    } catch (error) {
+      console.error(`AI语音问答失败: ${JSON.stringify(error)}`);
+      const fallbackAnswer = MuseumVoiceService.answerQuestion(this.artifact, displayQuestion);
+      this.voiceAnswerText = fallbackAnswer;
+      this.voiceAnswerSources = [];
+      this.voiceAnswerImages = [];
+      await MuseumVoiceService.speak(fallbackAnswer, this.currentVoiceSpeed);
+      this.voiceProgressText = MuseumVoiceService.getProgressText();
+      this.showToast('已生成回答并开始播报');
+    } finally {
+      this.isVoiceAsking = false;
+    }
+  }
+
+  private handleStartVoiceQuestion() {
+    if (this.isVoiceAsking || this.isRecognizingQuestion) {
+      return;
+    }
+
+    this.isRecognizingQuestion = true;
+    MuseumVoiceService.startVoiceQuestion(
+      (text: string) => {
+        this.voiceQuestionInput = text;
+        this.isRecognizingQuestion = false;
+        this.handleAskVoiceQuestion(text);
+      },
+      () => {
+        this.isRecognizingQuestion = false;
+      }
+    );
+  }
+
+  private finishVoiceQuestionRecognition() {
+    MuseumVoiceService.finishVoiceSearch();
+    this.isRecognizingQuestion = false;
   }
 
   private async handleToggleLike() {

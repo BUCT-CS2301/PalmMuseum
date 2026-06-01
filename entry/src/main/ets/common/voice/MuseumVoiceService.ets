@@ -3,6 +3,7 @@ import router from '@ohos.router';
 import { textToSpeech, speechRecognizer } from '@kit.CoreSpeechKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Artifact, mockArtifacts } from '../models/Artifact';
+import { QaChatAnswer, QaChatCallbacks, QaChatService } from '../services/QaChatService';
 
 export class MuseumVoiceService {
   private static ttsEngine: textToSpeech.TextToSpeechEngine | null = null;
@@ -378,6 +379,19 @@ ${artifact.description}`;
   }
 
   /**
+   * 调用 AI 问答接口获取回答，并在完成后自动播报
+   */
+  static async askAiQuestionAndSpeak(
+    question: string,
+    speed: number = MuseumVoiceService.currentSpeed,
+    callbacks?: QaChatCallbacks
+  ): Promise<QaChatAnswer> {
+    const answer = await QaChatService.ask(question, callbacks);
+    await MuseumVoiceService.speak(answer.answer, speed);
+    return answer;
+  }
+
+  /**
    * 创建 / 获取 ASR 语音识别引擎
    */
   private static async getAsrEngine(): Promise<speechRecognizer.SpeechRecognitionEngine> {
@@ -491,6 +505,84 @@ ${artifact.description}`;
     } catch (error) {
       console.error('[MuseumVoiceService] 启动语音搜索失败：' + JSON.stringify(error));
       promptAction.showToast({ message: '启动语音搜索失败，请使用真机调试' });
+    }
+  }
+
+  /**
+   * 开始语音提问：识别自然语言问题，不触发文物搜索跳转
+   */
+  static async startVoiceQuestion(
+    onText: (text: string) => void,
+    onComplete?: () => void
+  ): Promise<void> {
+    try {
+      let engine = await MuseumVoiceService.getAsrEngine();
+
+      MuseumVoiceService.currentAsrSessionId = 'voice-question-' + Date.now().toString();
+
+      let listener: speechRecognizer.RecognitionListener = {
+        onStart(sessionId: string, eventMessage: string) {
+          promptAction.showToast({ message: '请说出你的问题' });
+          console.info('[MuseumVoiceService] 语音提问ASR开始：' + sessionId + ', ' + eventMessage);
+        },
+
+        onEvent(sessionId: string, eventCode: number, eventMessage: string) {
+          console.info('[MuseumVoiceService] 语音提问ASR事件：' + sessionId + ', ' + eventCode + ', ' + eventMessage);
+        },
+
+        onResult(sessionId: string, result: speechRecognizer.SpeechRecognitionResult) {
+          console.info('[MuseumVoiceService] 语音提问ASR结果：' + JSON.stringify(result));
+
+          let text = MuseumVoiceService.parseAsrText(result);
+          if (!text || text.trim().length === 0) {
+            promptAction.showToast({ message: '没有识别到有效问题' });
+            return;
+          }
+
+          onText(text);
+        },
+
+        onComplete(sessionId: string, eventMessage: string) {
+          console.info('[MuseumVoiceService] 语音提问ASR完成：' + sessionId + ', ' + eventMessage);
+          if (onComplete) {
+            onComplete();
+          }
+        },
+
+        onError(sessionId: string, errorCode: number, errorMessage: string) {
+          console.error('[MuseumVoiceService] 语音提问ASR错误：' + sessionId + ', ' + errorCode + ', ' + errorMessage);
+          promptAction.showToast({ message: '语音识别失败：' + errorMessage });
+          if (onComplete) {
+            onComplete();
+          }
+        }
+      };
+
+      engine.setListener(listener);
+
+      let startParams: speechRecognizer.StartParams = {
+        sessionId: MuseumVoiceService.currentAsrSessionId,
+        audioInfo: {
+          audioType: 'pcm',
+          sampleRate: 16000,
+          soundChannel: 1,
+          sampleBit: 16
+        },
+        extraParams: {
+          'recognitionMode': 0,
+          'vadBegin': 2000,
+          'vadEnd': 1500,
+          'maxAudioDuration': 20000
+        }
+      };
+
+      engine.startListening(startParams);
+    } catch (error) {
+      console.error('[MuseumVoiceService] 启动语音提问失败：' + JSON.stringify(error));
+      promptAction.showToast({ message: '启动语音提问失败，请使用真机调试' });
+      if (onComplete) {
+        onComplete();
+      }
     }
   }
 
