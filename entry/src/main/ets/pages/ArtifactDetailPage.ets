@@ -55,6 +55,10 @@ export struct ArtifactDetailPage {
   @State voiceAnswerImages: QaImage[] = [];
   @State isVoiceAsking: boolean = false;
   @State isRecognizingQuestion: boolean = false;
+  @State showFullDescription: boolean = false;
+  @State showVoiceQuestionPanel: boolean = false;
+  @State showVoiceControls: boolean = false;
+  @State showAllComments: boolean = false;
 
   aboutToAppear() {
     this.clearReviewRefreshTimer();
@@ -84,6 +88,9 @@ export struct ArtifactDetailPage {
     this.voiceAnswerImages = [];
     this.isVoiceAsking = false;
     this.isRecognizingQuestion = false;
+    this.showVoiceQuestionPanel = false;
+    this.showVoiceControls = false;
+    this.showAllComments = false;
     this.replyTarget = null;
     this.uploadDescription = '';
     this.uploadLocation = this.artifact.museum;
@@ -163,6 +170,14 @@ export struct ArtifactDetailPage {
     return this.comments.filter((item: CommentItem) => !item.parentId);
   }
 
+  private getVisibleRootComments(): CommentItem[] {
+    const rootComments: CommentItem[] = this.getRootComments();
+    if (this.showAllComments) {
+      return rootComments;
+    }
+    return rootComments.slice(0, 3);
+  }
+
   private getChildComments(parentId: string): CommentItem[] {
     return this.comments.filter((item: CommentItem) => item.parentId === parentId);
   }
@@ -183,46 +198,7 @@ export struct ArtifactDetailPage {
         Scroll() {
           Column() {
             this.ImageSection()
-
-            Column() {
-              Text(this.artifact.title)
-                .fontSize(24)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#3A3A3A')
-                .margin({ bottom: 12 })
-
-              Row() {
-                this.InfoChip('年代', this.artifact.period)
-                this.InfoChip('类型', this.artifact.type)
-                this.InfoChip('材质', this.artifact.material)
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.SpaceAround)
-              .margin({ bottom: 16 })
-
-              Text(`收藏机构：${this.artifact.museum}`)
-                .fontSize(16)
-                .fontColor('#8B7355')
-                .margin({ bottom: 24 })
-
-              Text('文物介绍')
-                .fontSize(18)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#3A3A3A')
-                .alignSelf(ItemAlign.Start)
-                .margin({ bottom: 8 })
-
-              Text(this.artifact.description)
-                .fontSize(16)
-                .fontColor('#3A3A3A')
-                .lineHeight(24)
-                .textAlign(TextAlign.Start)
-                .margin({ bottom: 20 })
-            }
-            .backgroundColor('#FFFFFF')
-            .borderRadius(12)
-            .padding(16)
-            .margin({ left: 12, right: 12, top: 12, bottom: 8 })
+            this.BasicInfoSection()
 
             if (this.relatedEntities.length > 0) {
               this.RelatedEntitySection()
@@ -232,10 +208,13 @@ export struct ArtifactDetailPage {
               this.RelatedListSection()
             }
 
-            this.ActionSection()
+            this.InteractionSection()
+            this.VoiceSection()
             this.CommentSection()
             this.UploadSection()
           }
+          .width('100%')
+          .padding({ bottom: 18 })
         }
         .scrollBar(BarState.Auto)
       } else {
@@ -265,9 +244,9 @@ export struct ArtifactDetailPage {
         ForEach(this.allImageUrls, (url: string, index: number) => {
           Image(url)
             .width('100%')
-            .height(400)
+            .height(330)
             .objectFit(ImageFit.Cover)
-            .backgroundColor('#CCCCCC')
+            .backgroundColor('#DDD6CC')
             .alt($r('app.media.startIcon'))
             .scale({ x: this.scaleValue, y: this.scaleValue })
             .offset({ x: this.offsetX, y: this.offsetY })
@@ -301,19 +280,107 @@ export struct ArtifactDetailPage {
         this.currentImageIndex = index;
       })
       .width('100%')
-      .height(400)
+      .height(330)
 
-      Text(`${this.currentImageIndex + 1}/${this.allImageUrls.length}`)
-        .fontSize(12)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#80000000')
-        .borderRadius(10)
-        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-        .position({ x: '90%', y: '90%' })
+      Row() {
+        Text('<')
+          .fontSize(26)
+          .fontColor('#FFFFFF')
+          .fontWeight(FontWeight.Bold)
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .backgroundColor('#66000000')
+          .borderRadius(18)
+          .onClick(() => {
+            router.back();
+          })
+
+        Blank()
+
+        Text(`${this.currentImageIndex + 1}/${this.allImageUrls.length}`)
+          .fontSize(12)
+          .fontColor('#FFFFFF')
+          .backgroundColor('#66000000')
+          .borderRadius(12)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+      }
+      .width('100%')
+      .padding({ left: 14, right: 14, top: 18 })
+      .alignItems(VerticalAlign.Top)
     }
     .width('100%')
-    .height(400)
+    .height(330)
     .backgroundColor('#F5F0E8')
+  }
+
+  @Builder
+  BasicInfoSection() {
+    Column({ space: 12 }) {
+      Text(this.artifact!.title)
+        .fontSize(24)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
+        .width('100%')
+        .textAlign(TextAlign.Start)
+
+      Text(this.artifact!.museum)
+        .fontSize(14)
+        .fontColor('#8B7355')
+        .width('100%')
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Flex({ wrap: FlexWrap.Wrap }) {
+        this.TagChip(this.artifact!.period || '年代不详')
+        this.TagChip(this.artifact!.type || '类型不详')
+        this.TagChip(this.artifact!.material || '材质不详')
+      }
+      .width('100%')
+
+      Divider()
+        .strokeWidth(0.5)
+        .color('#E0D5C6')
+
+      Row() {
+        Text('文物介绍')
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')
+
+        Blank()
+
+        Text(this.showFullDescription ? '收起' : '展开')
+          .fontSize(13)
+          .fontColor('#C05040')
+          .onClick(() => {
+            this.showFullDescription = !this.showFullDescription;
+          })
+      }
+      .width('100%')
+
+      Text(this.artifact!.description)
+        .fontSize(15)
+        .fontColor('#3A3A3A')
+        .lineHeight(23)
+        .maxLines(this.showFullDescription ? 50 : 6)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .width('100%')
+    .padding(16)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(18)
+    .margin({ left: 12, right: 12, top: -18, bottom: 10 })
+  }
+
+  @Builder
+  TagChip(value: string) {
+    Text(value)
+      .fontSize(12)
+      .fontColor('#8B7355')
+      .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+      .backgroundColor('#F2EDE8')
+      .borderRadius(14)
+      .margin({ right: 8, bottom: 4 })
   }
 
   @Builder
@@ -347,9 +414,9 @@ export struct ArtifactDetailPage {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .backgroundColor('#FFFFFF')
-    .borderRadius(12)
-    .padding(12)
-    .margin({ left: 12, right: 12, bottom: 8 })
+    .borderRadius(18)
+    .padding(14)
+    .margin({ left: 12, right: 12, bottom: 10 })
   }
 
   @Builder
@@ -367,10 +434,10 @@ export struct ArtifactDetailPage {
           ForEach(this.relatedList, (item: Artifact) => {
             Column() {
               Image(item.imageUrl)
-                .width(120)
-                .height(120)
+                .width(116)
+                .height(116)
                 .objectFit(ImageFit.Cover)
-                .borderRadius(8)
+                .borderRadius(10)
                 .alt($r('app.media.startIcon'))
 
               Text(item.title)
@@ -378,14 +445,17 @@ export struct ArtifactDetailPage {
                 .fontColor('#3A3A3A')
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width(120)
+                .width(116)
                 .margin({ top: 4 })
 
               Text(item.period)
                 .fontSize(11)
                 .fontColor('#8B7355')
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width(116)
             }
-            .margin({ right: 8 })
+            .margin({ right: 10 })
             .onClick(() => {
               router.replaceUrl({
                 url: 'pages/ArtifactDetailPage',
@@ -394,7 +464,7 @@ export struct ArtifactDetailPage {
             })
           }, (item: Artifact) => item.id)
         }
-        .padding({ top: 8, bottom: 16 })
+        .padding({ top: 8, bottom: 12 })
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
@@ -402,284 +472,16 @@ export struct ArtifactDetailPage {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .backgroundColor('#FFFFFF')
-    .borderRadius(12)
-    .padding(12)
-    .margin({ left: 12, right: 12, bottom: 8 })
+    .borderRadius(18)
+    .padding(14)
+    .margin({ left: 12, right: 12, bottom: 10 })
   }
 
   @Builder
-  ActionSection() {
+  InteractionSection() {
     Column({ space: 12 }) {
       Row({ space: 12 }) {
-        Button('语音讲解', { type: ButtonType.Capsule })
-          .layoutWeight(1)
-          .height(44)
-          .fontSize(15)
-          .backgroundColor('#C05040')
-          .fontColor(Color.White)
-          .onClick(async () => {
-            if (this.artifact !== null) {
-              try {
-                const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
-                await MuseumVoiceService.speak(text, this.currentVoiceSpeed);
-                this.voiceProgressText = MuseumVoiceService.getProgressText();
-                this.showToast(`正在以 ${this.currentVoiceSpeed}x 播放语音讲解`);
-              } catch (error) {
-                this.showToast('语音服务暂不可用');
-              }
-            }
-          })
-
-        Button('语音问答', { type: ButtonType.Capsule })
-          .layoutWeight(1)
-          .height(44)
-          .fontSize(15)
-          .backgroundColor('#8B7355')
-          .fontColor(Color.White)
-          .enabled(!this.isVoiceAsking)
-          .onClick(async () => {
-            await this.handleAskVoiceQuestion();
-          })
-      }
-      .width('100%')
-
-      Column({ space: 10 }) {
-        Text('AI 语音问答')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#3A3A3A')
-          .alignSelf(ItemAlign.Start)
-
-        TextInput({
-          placeholder: '输入关于该文物的问题，例如：它收藏在哪里？',
-          text: this.voiceQuestionInput
-        })
-          .width('100%')
-          .height(44)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(8)
-          .enabled(!this.isVoiceAsking)
-          .onChange((value: string) => {
-            this.voiceQuestionInput = value;
-          })
-
-        Row({ space: 8 }) {
-          Button(this.isVoiceAsking ? '生成中...' : '提问并播报')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#C05040')
-            .fontColor(Color.White)
-            .enabled(!this.isVoiceAsking)
-            .onClick(async () => {
-              await this.handleAskVoiceQuestion();
-            })
-
-          Button(this.isRecognizingQuestion ? '识别中...' : '语音提问')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#8B7355')
-            .fontColor(Color.White)
-            .enabled(!this.isVoiceAsking)
-            .onClick(() => {
-              this.handleStartVoiceQuestion();
-            })
-
-          Button('结束识别')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#F2EDE8')
-            .fontColor('#8B7355')
-            .enabled(this.isRecognizingQuestion)
-            .onClick(() => {
-              this.finishVoiceQuestionRecognition();
-            })
-        }
-        .width('100%')
-
-        if (this.voiceQuestionText.length > 0 || this.voiceAnswerText.length > 0 || this.isVoiceAsking) {
-          Column({ space: 8 }) {
-            if (this.voiceQuestionText.length > 0) {
-              Text(`问题：${this.voiceQuestionText}`)
-                .fontSize(13)
-                .fontColor('#8B7355')
-                .lineHeight(20)
-                .alignSelf(ItemAlign.Start)
-            }
-
-            Text(this.voiceAnswerText.length > 0 ? this.voiceAnswerText : '正在生成回答...')
-              .fontSize(14)
-              .fontColor('#3A3A3A')
-              .lineHeight(22)
-              .width('100%')
-
-            if (this.voiceAnswerSources.length > 0) {
-              Column({ space: 4 }) {
-                Text('参考来源')
-                  .fontSize(13)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor('#8B7355')
-                  .alignSelf(ItemAlign.Start)
-
-                ForEach(this.voiceAnswerSources, (source: QaSource, index: number) => {
-                  Text(source.url.length > 0 ? `${source.name}：${source.url}` : source.name)
-                    .fontSize(12)
-                    .fontColor('#8B7355')
-                    .maxLines(2)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .width('100%')
-                }, (source: QaSource, index: number) => index.toString())
-              }
-              .width('100%')
-              .alignItems(HorizontalAlign.Start)
-            }
-
-            if (this.voiceAnswerImages.length > 0) {
-              Scroll() {
-                Row({ space: 8 }) {
-                  ForEach(this.voiceAnswerImages, (image: QaImage, index: number) => {
-                    Image(image.url)
-                      .width(96)
-                      .height(72)
-                      .objectFit(ImageFit.Cover)
-                      .borderRadius(8)
-                      .alt($r('app.media.startIcon'))
-                  }, (image: QaImage, index: number) => index.toString())
-                }
-                .padding({ top: 4, bottom: 4 })
-              }
-              .scrollable(ScrollDirection.Horizontal)
-              .scrollBar(BarState.Off)
-              .width('100%')
-            }
-          }
-          .width('100%')
-          .padding(10)
-          .backgroundColor('#F7F3ED')
-          .borderRadius(10)
-          .alignItems(HorizontalAlign.Start)
-        }
-      }
-      .width('100%')
-      .padding(12)
-      .backgroundColor(Color.Transparent)
-
-      Column({ space: 10 }) {
-        Text('语音播放控制')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#3A3A3A')
-          .alignSelf(ItemAlign.Start)
-
-        Row({ space: 8 }) {
-          Button('0.75x')
-            .layoutWeight(1)
-            .height(36)
-            .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 0.75 ? '#C05040' : '#F2EDE8')
-            .fontColor(this.currentVoiceSpeed === 0.75 ? Color.White : '#8B7355')
-            .onClick(() => {
-              this.currentVoiceSpeed = 0.75;
-              MuseumVoiceService.setSpeed(0.75);
-            })
-
-          Button('1x')
-            .layoutWeight(1)
-            .height(36)
-            .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1 ? '#C05040' : '#F2EDE8')
-            .fontColor(this.currentVoiceSpeed === 1 ? Color.White : '#8B7355')
-            .onClick(() => {
-              this.currentVoiceSpeed = 1;
-              MuseumVoiceService.setSpeed(1);
-            })
-
-          Button('1.25x')
-            .layoutWeight(1)
-            .height(36)
-            .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1.25 ? '#C05040' : '#F2EDE8')
-            .fontColor(this.currentVoiceSpeed === 1.25 ? Color.White : '#8B7355')
-            .onClick(() => {
-              this.currentVoiceSpeed = 1.25;
-              MuseumVoiceService.setSpeed(1.25);
-            })
-
-          Button('1.5x')
-            .layoutWeight(1)
-            .height(36)
-            .fontSize(13)
-            .backgroundColor(this.currentVoiceSpeed === 1.5 ? '#C05040' : '#F2EDE8')
-            .fontColor(this.currentVoiceSpeed === 1.5 ? Color.White : '#8B7355')
-            .onClick(() => {
-              this.currentVoiceSpeed = 1.5;
-              MuseumVoiceService.setSpeed(1.5);
-            })
-        }
-        .width('100%')
-
-        Row({ space: 8 }) {
-          Button('上一段')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#F2EDE8')
-            .fontColor('#8B7355')
-            .onClick(() => {
-              MuseumVoiceService.previousParagraph();
-              this.voiceProgressText = MuseumVoiceService.getProgressText();
-            })
-
-          Button('下一段')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#F2EDE8')
-            .fontColor('#8B7355')
-            .onClick(() => {
-              MuseumVoiceService.nextParagraph();
-              this.voiceProgressText = MuseumVoiceService.getProgressText();
-            })
-        }
-        .width('100%')
-
-        Row({ space: 8 }) {
-          Button('停止')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#C05040')
-            .fontColor(Color.White)
-            .onClick(() => {
-              MuseumVoiceService.stop();
-            })
-
-          Button('重播')
-            .layoutWeight(1)
-            .height(38)
-            .fontSize(14)
-            .backgroundColor('#8B7355')
-            .fontColor(Color.White)
-            .onClick(() => {
-              MuseumVoiceService.replay();
-              this.voiceProgressText = MuseumVoiceService.getProgressText();
-            })
-        }
-        .width('100%')
-
-        Text(`当前段落：${this.voiceProgressText}`)
-          .fontSize(13)
-          .fontColor('#8B7355')
-          .alignSelf(ItemAlign.Start)
-      }
-      .width('100%')
-      .padding(12)
-      .backgroundColor(Color.Transparent)
-
-      Row({ space: 12 }) {
-        Button(this.likeSummary.active ? `已赞 ${this.likeSummary.count}` : `点赞 ${this.likeSummary.count}`, { type: ButtonType.Capsule })
+        Button(this.likeSummary.active ? `已点赞 ${this.likeSummary.count}` : `点赞 ${this.likeSummary.count}`, { type: ButtonType.Capsule })
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
@@ -689,7 +491,7 @@ export struct ArtifactDetailPage {
             this.handleToggleLike();
           })
 
-        Button(this.favoriteSummary.active ? `已藏 ${this.favoriteSummary.count}` : `收藏 ${this.favoriteSummary.count}`, { type: ButtonType.Capsule })
+        Button(this.favoriteSummary.active ? `已收藏 ${this.favoriteSummary.count}` : `收藏 ${this.favoriteSummary.count}`, { type: ButtonType.Capsule })
           .layoutWeight(1)
           .height(44)
           .fontSize(15)
@@ -704,10 +506,285 @@ export struct ArtifactDetailPage {
       this.FavoriteGroupSelector()
     }
     .width('100%')
+    .padding(14)
     .backgroundColor('#FFFFFF')
-    .borderRadius(12)
-    .padding(12)
-    .margin({ left: 12, right: 12, bottom: 8 })
+    .borderRadius(18)
+    .margin({ left: 12, right: 12, bottom: 10 })
+  }
+
+  @Builder
+  VoiceSection() {
+    Column({ space: 12 }) {
+      Row() {
+        Text('语音导览')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#3A3A3A')
+
+        Blank()
+
+        Text(this.showVoiceControls ? `播放中 · ${this.voiceProgressText}` : '讲解 / 问答')
+          .fontSize(12)
+          .fontColor('#8B7355')
+      }
+      .width('100%')
+
+      Row({ space: 10 }) {
+        Button(this.showVoiceControls ? '继续讲解' : '语音讲解', { type: ButtonType.Capsule })
+          .layoutWeight(1)
+          .height(42)
+          .fontSize(15)
+          .backgroundColor('#C05040')
+          .fontColor(Color.White)
+          .onClick(async () => {
+            if (this.artifact !== null) {
+              try {
+                const text = MuseumVoiceService.buildArtifactGuide(this.artifact);
+                this.showVoiceControls = true;
+                await MuseumVoiceService.speak(text, this.currentVoiceSpeed);
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
+                this.showToast(`正在以 ${this.currentVoiceSpeed}x 播放语音讲解`);
+              } catch (error) {
+                this.showToast('语音服务暂不可用');
+              }
+            }
+          })
+
+        Button(this.showVoiceQuestionPanel ? '收起问答' : 'AI 问答', { type: ButtonType.Capsule })
+          .layoutWeight(1)
+          .height(42)
+          .fontSize(15)
+          .backgroundColor(this.showVoiceQuestionPanel ? '#C05040' : '#8B7355')
+          .fontColor(Color.White)
+          .enabled(!this.isVoiceAsking)
+          .onClick(() => {
+            this.showVoiceQuestionPanel = !this.showVoiceQuestionPanel;
+          })
+      }
+      .width('100%')
+
+      if (this.showVoiceQuestionPanel) {
+        Column({ space: 10 }) {
+          TextInput({
+            placeholder: '输入关于该文物的问题，例如：它收藏在哪里？',
+            text: this.voiceQuestionInput
+          })
+            .width('100%')
+            .height(42)
+            .fontSize(14)
+            .backgroundColor('#F8F3EF')
+            .borderRadius(12)
+            .enabled(!this.isVoiceAsking)
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.voiceQuestionInput = value;
+            })
+
+          Row({ space: 8 }) {
+            Button(this.isVoiceAsking ? '生成中...' : '提问并播报')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#C05040')
+              .fontColor(Color.White)
+              .enabled(!this.isVoiceAsking)
+              .onClick(async () => {
+                this.showVoiceControls = true;
+                await this.handleAskVoiceQuestion();
+              })
+
+            Button(this.isRecognizingQuestion ? '识别中...' : '语音提问')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#8B7355')
+              .fontColor(Color.White)
+              .enabled(!this.isVoiceAsking)
+              .onClick(() => {
+                this.showVoiceControls = true;
+                this.handleStartVoiceQuestion();
+              })
+
+            if (this.isRecognizingQuestion) {
+              Button('结束')
+                .width(64)
+                .height(36)
+                .fontSize(13)
+                .backgroundColor('#F2EDE8')
+                .fontColor('#8B7355')
+                .onClick(() => {
+                  this.finishVoiceQuestionRecognition();
+                })
+            }
+          }
+          .width('100%')
+
+          if (this.voiceQuestionText.length > 0 || this.voiceAnswerText.length > 0 || this.isVoiceAsking) {
+            Column({ space: 8 }) {
+              if (this.voiceQuestionText.length > 0) {
+                Text(`问题：${this.voiceQuestionText}`)
+                  .fontSize(13)
+                  .fontColor('#8B7355')
+                  .lineHeight(20)
+                  .alignSelf(ItemAlign.Start)
+              }
+
+              Text(this.voiceAnswerText.length > 0 ? this.voiceAnswerText : '正在生成回答...')
+                .fontSize(14)
+                .fontColor('#3A3A3A')
+                .lineHeight(22)
+                .width('100%')
+
+              if (this.voiceAnswerSources.length > 0) {
+                Column({ space: 4 }) {
+                  Text('参考来源')
+                    .fontSize(13)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#8B7355')
+                    .alignSelf(ItemAlign.Start)
+
+                  ForEach(this.voiceAnswerSources, (source: QaSource, index: number) => {
+                    Text(source.url.length > 0 ? `${source.name}：${source.url}` : source.name)
+                      .fontSize(12)
+                      .fontColor('#8B7355')
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .width('100%')
+                  }, (source: QaSource, index: number) => index.toString())
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Start)
+              }
+
+              if (this.voiceAnswerImages.length > 0) {
+                Scroll() {
+                  Row({ space: 8 }) {
+                    ForEach(this.voiceAnswerImages, (image: QaImage, index: number) => {
+                      Image(image.url)
+                        .width(96)
+                        .height(72)
+                        .objectFit(ImageFit.Cover)
+                        .borderRadius(8)
+                        .alt($r('app.media.startIcon'))
+                    }, (image: QaImage, index: number) => index.toString())
+                  }
+                  .padding({ top: 4, bottom: 4 })
+                }
+                .scrollable(ScrollDirection.Horizontal)
+                .scrollBar(BarState.Off)
+                .width('100%')
+              }
+            }
+            .width('100%')
+            .padding(10)
+            .backgroundColor('#F8F3EF')
+            .borderRadius(12)
+            .alignItems(HorizontalAlign.Start)
+          }
+        }
+        .width('100%')
+      }
+
+      if (this.showVoiceControls) {
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0D5C6')
+
+        Column({ space: 10 }) {
+          Row() {
+            Text('播放控制')
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#3A3A3A')
+
+            Blank()
+
+            Text(`当前段落：${this.voiceProgressText}`)
+              .fontSize(12)
+              .fontColor('#8B7355')
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            this.SpeedButton('0.75x', 0.75)
+            this.SpeedButton('1x', 1)
+            this.SpeedButton('1.25x', 1.25)
+            this.SpeedButton('1.5x', 1.5)
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            Button('上一段')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#F2EDE8')
+              .fontColor('#8B7355')
+              .onClick(() => {
+                MuseumVoiceService.previousParagraph();
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
+              })
+
+            Button('下一段')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#F2EDE8')
+              .fontColor('#8B7355')
+              .onClick(() => {
+                MuseumVoiceService.nextParagraph();
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
+              })
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            Button('停止')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#C05040')
+              .fontColor(Color.White)
+              .onClick(() => {
+                MuseumVoiceService.stop();
+                this.showVoiceControls = false;
+              })
+
+            Button('重播')
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(13)
+              .backgroundColor('#8B7355')
+              .fontColor(Color.White)
+              .onClick(() => {
+                MuseumVoiceService.replay();
+                this.voiceProgressText = MuseumVoiceService.getProgressText();
+              })
+          }
+          .width('100%')
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(14)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(18)
+    .margin({ left: 12, right: 12, bottom: 10 })
+  }
+
+  @Builder
+  SpeedButton(label: string, speed: number) {
+    Button(label)
+      .layoutWeight(1)
+      .height(34)
+      .fontSize(13)
+      .backgroundColor(this.currentVoiceSpeed === speed ? '#C05040' : '#F2EDE8')
+      .fontColor(this.currentVoiceSpeed === speed ? Color.White : '#8B7355')
+      .onClick(() => {
+        this.currentVoiceSpeed = speed;
+        MuseumVoiceService.setSpeed(speed);
+      })
   }
 
   @Builder
@@ -715,11 +792,11 @@ export struct ArtifactDetailPage {
     Column({ space: 8 }) {
       Row() {
         Text('收藏分组')
-          .fontSize(14)
+          .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor('#3A3A3A')
         Blank()
-        Text(this.favoriteSummary.active ? `当前分组：${this.selectedFavoriteGroup}` : '选择后用于加入收藏')
+        Text(this.favoriteSummary.active ? `当前：${this.selectedFavoriteGroup}` : '选择后加入收藏')
           .fontSize(12)
           .fontColor('#8B7355')
       }
@@ -742,8 +819,6 @@ export struct ArtifactDetailPage {
       .width('100%')
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor(Color.Transparent)
   }
 
   @Builder
@@ -755,15 +830,15 @@ export struct ArtifactDetailPage {
           .fontWeight(FontWeight.Bold)
           .fontColor('#3A3A3A')
         Blank()
-        Text('公开评论支持点赞与回复')
+        Text('公开评论')
           .fontSize(12)
           .fontColor('#8B7355')
       }
       .width('100%')
-      .margin({ bottom: 12 })
+      .margin({ bottom: 8 })
 
-      Text('新评论需经过审核后才会公开显示，你的待审核评论会仅自己可见。')
-        .fontSize(13)
+      Text('新评论需审核后公开显示，待审核评论仅自己可见。')
+        .fontSize(12)
         .fontColor('#8B7355')
         .alignSelf(ItemAlign.Start)
         .margin({ bottom: 12 })
@@ -776,62 +851,65 @@ export struct ArtifactDetailPage {
           .margin({ bottom: 12 })
       } else {
         Column({ space: 10 }) {
-          ForEach(this.getRootComments(), (item: CommentItem) => {
+          ForEach(this.getVisibleRootComments(), (item: CommentItem) => {
             this.CommentThreadItemView(item, 0)
           }, (item: CommentItem) => this.buildCommentRenderKey(item))
         }
         .width('100%')
-        .margin({ bottom: 16 })
+        .margin({ bottom: 10 })
+
+        if (this.getRootComments().length > 3) {
+          Button(this.showAllComments ? '收起评论' : `查看全部 ${this.getRootComments().length} 条评论`)
+            .width('100%')
+            .height(38)
+            .fontSize(13)
+            .backgroundColor('#F2EDE8')
+            .fontColor('#8B7355')
+            .borderRadius(19)
+            .margin({ bottom: 12 })
+            .onClick(() => {
+              this.showAllComments = !this.showAllComments;
+            })
+        }
       }
 
-      if (this.replyTarget) {
-        Row() {
-          Text(`正在回复 ${this.replyTarget.username}`)
-            .fontSize(12)
-            .fontColor('#C05040')
-          Blank()
-          Text('取消回复')
-            .fontSize(12)
-            .fontColor('#FF4D4F')
+      if (!this.replyTarget) {
+        Row({ space: 8 }) {
+          TextInput({
+            placeholder: '写下你的看法…',
+            text: this.commentInput
+          })
+            .layoutWeight(1)
+            .height(42)
+            .fontSize(14)
+            .backgroundColor('#F8F3EF')
+            .borderRadius(21)
+            .padding({ left: 14, right: 12 })
+            .onChange((value: string) => {
+              this.commentInput = value;
+            })
+
+          Button('发表')
+            .width(68)
+            .height(42)
+            .fontSize(14)
+            .backgroundColor('#C05040')
+            .fontColor(Color.White)
+            .borderRadius(21)
+            .enabled(!this.isSubmittingComment)
             .onClick(() => {
-              this.replyTarget = null;
+              this.handleSubmitComment();
             })
         }
         .width('100%')
-        .margin({ bottom: 8 })
       }
-
-      Row({ space: 8 }) {
-        TextInput({
-          placeholder: this.replyTarget ? `回复 ${this.replyTarget.username}…` : '写下你的看法…',
-          text: this.commentInput
-        })
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(8)
-          .onChange((value: string) => {
-            this.commentInput = value;
-          })
-
-        Button('发表')
-          .height(44)
-          .fontSize(14)
-          .backgroundColor('#C05040')
-          .fontColor(Color.White)
-          .enabled(!this.isSubmittingComment)
-          .onClick(() => {
-            this.handleSubmitComment();
-          })
-      }
-      .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .backgroundColor('#FFFFFF')
-    .borderRadius(12)
-    .padding(12)
-    .margin({ left: 12, right: 12, bottom: 8 })
+    .borderRadius(18)
+    .padding(14)
+    .margin({ left: 12, right: 12, bottom: 10 })
   }
 
   @Builder
@@ -885,10 +963,10 @@ export struct ArtifactDetailPage {
 
           Text('回复')
             .fontSize(12)
-            .fontColor('#8B7355')
+            .fontColor(this.replyTarget && this.replyTarget.id === item.id ? '#FFFFFF' : '#8B7355')
             .margin({ left: 10 })
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor('#F2EDE8')
+            .backgroundColor(this.replyTarget && this.replyTarget.id === item.id ? '#C05040' : '#F2EDE8')
             .borderRadius(14)
             .onClick(() => {
               this.prepareReply(item);
@@ -900,6 +978,59 @@ export struct ArtifactDetailPage {
         }
       }
       .width('100%')
+
+      if (this.replyTarget && this.replyTarget.id === item.id) {
+        Column({ space: 8 }) {
+          Row() {
+            Text(`回复 ${item.username}`)
+              .fontSize(12)
+              .fontColor('#C05040')
+            Blank()
+            Text('取消')
+              .fontSize(12)
+              .fontColor('#FF4D4F')
+              .onClick(() => {
+                this.replyTarget = null;
+                this.commentInput = '';
+              })
+          }
+          .width('100%')
+
+          Row({ space: 8 }) {
+            TextInput({
+              placeholder: `回复 ${item.username}…`,
+              text: this.commentInput
+            })
+              .layoutWeight(1)
+              .height(40)
+              .fontSize(14)
+              .backgroundColor('#FFFFFF')
+              .borderRadius(20)
+              .border({ width: 1, color: '#E0D5C6' })
+              .padding({ left: 12, right: 12 })
+              .onChange((value: string) => {
+                this.commentInput = value;
+              })
+
+            Button('发送')
+              .width(64)
+              .height(40)
+              .fontSize(13)
+              .backgroundColor('#C05040')
+              .fontColor(Color.White)
+              .borderRadius(20)
+              .enabled(!this.isSubmittingComment)
+              .onClick(() => {
+                this.handleSubmitComment();
+              })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(10)
+        .backgroundColor('#F8F3EF')
+        .borderRadius(12)
+      }
 
       if (this.getChildComments(item.id).length > 0) {
         Column({ space: 8 }) {
@@ -929,25 +1060,29 @@ export struct ArtifactDetailPage {
         .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
 
-      Text('上传的照片会先进入审核，你可以补充拍摄地点和一句简短说明。')
-        .fontSize(13)
+      Text('上传的照片会先进入审核，可补充拍摄地点和简短说明。')
+        .fontSize(12)
         .fontColor('#8B7355')
         .alignSelf(ItemAlign.Start)
 
       TextInput({ placeholder: '拍摄地点', text: this.uploadLocation })
-        .height(44)
+        .height(42)
         .width('100%')
+        .fontSize(14)
         .backgroundColor('#FFFFFF')
-        .borderRadius(10)
+        .borderRadius(12)
+        .padding({ left: 14, right: 12 })
         .onChange((value: string) => {
           this.uploadLocation = value;
         })
 
       TextInput({ placeholder: '简短说明', text: this.uploadDescription })
-        .height(44)
+        .height(42)
         .width('100%')
+        .fontSize(14)
         .backgroundColor('#FFFFFF')
-        .borderRadius(10)
+        .borderRadius(12)
+        .padding({ left: 14, right: 12 })
         .onChange((value: string) => {
           this.uploadDescription = value;
         })
@@ -966,23 +1101,9 @@ export struct ArtifactDetailPage {
     .width('100%')
     .padding(14)
     .backgroundColor('#F2EDE8')
-    .borderRadius(12)
+    .borderRadius(18)
     .margin({ left: 12, right: 12, bottom: 20 })
     .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  InfoChip(label: string, value: string) {
-    Column() {
-      Text(label)
-        .fontSize(12)
-        .fontColor('#8B7355')
-      Text(value)
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#3A3A3A')
-        .margin({ top: 4 })
-    }
   }
 
   private buildDefaultVoiceQuestion(): string {
@@ -1024,6 +1145,7 @@ export struct ArtifactDetailPage {
     this.voiceAnswerSources = [];
     this.voiceAnswerImages = [];
     this.isVoiceAsking = true;
+    this.showVoiceControls = true;
 
     try {
       const answer = await MuseumVoiceService.askAiQuestionAndSpeak(
@@ -1132,6 +1254,7 @@ export struct ArtifactDetailPage {
       return;
     }
     this.replyTarget = item;
+    this.commentInput = '';
   }
 
   private async handleToggleCommentLike(item: CommentItem) {

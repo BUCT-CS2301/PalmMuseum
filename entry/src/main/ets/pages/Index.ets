@@ -2,79 +2,86 @@
 import { HomePage } from './HomePage';
 import { ProfilePage } from './ProfilePage';
 import { DiscoverPage } from './DiscoverPage';
-import { ShowPage } from './ShowPage';         // ★ 新增引入
+import { ShowPage } from './ShowPage';
 import font from '@ohos.font';
 
 @Entry
 @Component
 struct Index {
   @State currentIndex: number = 0;
+
   aboutToAppear() {
     font.registerFont({
-      familyName: 'myCustomFont',                     // 自定义字体别名
-      familySrc: $rawfile('fahuawenkai.ttf')       // 文件名与实际一致
+      familyName: 'myCustomFont',
+      familySrc: $rawfile('fahuawenkai.ttf')
     });
   }
 
   @Builder
-  TabBarItem(index: number, selectedIndex: number, label: string, icon: string, selectedIcon: string) {
+  TabBarItem(index: number, label: string, icon: string, selectedIcon: string) {
     Column() {
-      Text(index === selectedIndex ? selectedIcon : icon)
+      Text(this.currentIndex === index ? selectedIcon : icon)
         .fontSize(24)
-        .fontColor(index === selectedIndex ? '#C05040' : '#8B7355')
+        .fontColor(this.currentIndex === index ? '#C05040' : '#8B7355')
+
       Text(label)
         .fontSize(12)
-        .fontColor(index === selectedIndex ? '#C05040' : '#8B7355')
+        .fontColor(this.currentIndex === index ? '#C05040' : '#8B7355')
+        .fontWeight(this.currentIndex === index ? FontWeight.Medium : FontWeight.Regular)
         .margin({ top: 2 })
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
     .onClick(() => {
       this.currentIndex = index;
+
+      if (index === 2) {
+        AppStorage.SetOrCreate('interactionVersion', Date.now());
+      }
     })
   }
 
   build() {
     Tabs({ index: this.currentIndex }) {
-
       TabContent() {
         ShowPage()
       }
-      .tabBar(this.TabBarItem(0, this.currentIndex, '首页', '🏛️', '🏛️'))
-
+      .tabBar(this.TabBarItem(0, '首页', '🏛️', '🏛️'))
 
       TabContent() {
         HomePage()
       }
-      .tabBar(this.TabBarItem(1, this.currentIndex, '文物', '🏺', '🏺'))
-
+      .tabBar(this.TabBarItem(1, '文物', '🏺', '🏺'))
 
       TabContent() {
         DiscoverPage()
       }
-      .tabBar(this.TabBarItem(2, this.currentIndex, '发现', '🔍', '🔍'))
-
+      .tabBar(this.TabBarItem(2, '发现', '🔍', '🔍'))
 
       TabContent() {
         ProfilePage()
       }
-      .tabBar(this.TabBarItem(3, this.currentIndex, '我的', '📜', '📜'))
+      .tabBar(this.TabBarItem(3, '我的', '📜', '📜'))
     }
     .barMode(BarMode.Fixed)
     .barPosition(BarPosition.End)
     .onChange((index: number) => {
       this.currentIndex = index;
+
       if (index === 2) {
         AppStorage.SetOrCreate('interactionVersion', Date.now());
       }
     })
     .scrollable(false)
     .animationDuration(0)
-    .barBackgroundColor('#F5F0E8')             // 改为页面背景色
+    .barBackgroundColor('#F5F0E8')
     .divider({
       strokeWidth: 0.5,
       color: '#E0D5C6'
     })
+    .width('100%')
+    .height('100%')
   }
 }

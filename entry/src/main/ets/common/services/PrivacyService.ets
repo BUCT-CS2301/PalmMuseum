@@ -1,29 +1,89 @@
+// common/services/PrivacyService.ets
+import { HttpApi } from '../network/HttpApi';
 import { PrivacySettings } from '../models/InteractionModels';
-import { interactionStore } from '../store/InteractionStore';
+
+interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+interface BackendPrivacySettings {
+  favoritesVisible: boolean;
+  likesVisible: boolean;
+  commentsVisible: boolean;
+  uploadsVisible: boolean;
+}
 
 export class PrivacyService {
-  static async getMyPrivacy(username: string): Promise<PrivacySettings> {
-    // 当前 mock 阶段：从本地读取
-    return await interactionStore.getPrivacy(username);
-
-    // 后面真实接口阶段，替换成：
-    // const res = await HttpApi.get<ApiResponse<PrivacySettings>>('/users/me/privacy');
-    // if (res.code !== 200 || !res.data) {
-    //   throw new Error(res.message || '获取隐私设置失败');
-    // }
-    // return res.data;
+  private static getCurrentUsername(): string {
+    const username = AppStorage.Get('username') as string;
+    return username || '';
   }
 
-  static async updateMyPrivacy(username: string, privacy: PrivacySettings): Promise<PrivacySettings> {
-    // 当前 mock 阶段：保存到本地
-    await interactionStore.savePrivacy(username, privacy);
-    return privacy;
+  private static toFrontend(data: BackendPrivacySettings): PrivacySettings {
+    return {
+      showFavorites: data.favoritesVisible,
+      showLikes: data.likesVisible,
+      showComments: data.commentsVisible,
+      showPhotos: data.uploadsVisible
+    };
+  }
 
-    // 后面真实接口阶段，替换成：
-    // const res = await HttpApi.put<ApiResponse<PrivacySettings>>('/users/me/privacy', privacy);
-    // if (res.code !== 200 || !res.data) {
-    //   throw new Error(res.message || '保存隐私设置失败');
-    // }
-    // return res.data;
+  private static toBackend(privacy: PrivacySettings): BackendPrivacySettings {
+    return {
+      favoritesVisible: privacy.showFavorites,
+      likesVisible: privacy.showLikes,
+      commentsVisible: privacy.showComments,
+      uploadsVisible: privacy.showPhotos
+    };
+  }
+
+  static async getMyPrivacy(username?: string): Promise<PrivacySettings> {
+    const targetUsername: string = username || PrivacyService.getCurrentUsername();
+
+    if (!targetUsername) {
+      throw new Error('请先登录');
+    }
+
+    const res = await HttpApi.get<ApiResponse<BackendPrivacySettings>>(
+      `/users/${targetUsername}/privacy`
+    );
+
+    if (res.code !== 200 || !res.data) {
+      throw new Error(res.message || '获取隐私设置失败');
+    }
+
+    return PrivacyService.toFrontend(res.data);
+  }
+
+  // 注意：这里故意用 username 在前、privacy 在后，
+  // 是为了匹配你现有 PrivacySettingPage.ets 的调用方式。
+  static async updateMyPrivacy(
+    username: string,
+    privacy: PrivacySettings
+  ): Promise<PrivacySettings> {
+    const targetUsername: string = username || PrivacyService.getCurrentUsername();
+
+    if (!targetUsername) {
+      throw new Error('请先登录');
+    }
+
+    const body: BackendPrivacySettings = PrivacyService.toBackend(privacy);
+
+    const res = await HttpApi.put<ApiResponse<BackendPrivacySettings>>(
+      `/users/${targetUsername}/privacy`,
+      body
+    );
+
+    if (res.code !== 200 || !res.data) {
+      throw new Error(res.message || '保存隐私设置失败');
+    }
+
+    return PrivacyService.toFrontend(res.data);
+  }
+
+  static async getUserPrivacy(username: string): Promise<PrivacySettings> {
+    return PrivacyService.getMyPrivacy(username);
   }
 }

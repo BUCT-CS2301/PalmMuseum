@@ -1,7 +1,7 @@
 // pages/LoginPage.ets
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
-import { UserService } from '../common/services/UserService';
+import { UserService, LoginResult } from '../common/services/UserService';
 
 @Entry
 @Component
@@ -88,13 +88,14 @@ export struct LoginPage {
           this.doLogin();
         })
 
-      Button('华为账号一键登录')
+      Button(this.isLoading ? '登录中...' : '华为账号一键登录')
         .width('100%')
         .height(50)
         .fontSize(16)
-        .fontColor(Color.White)
-        .backgroundColor('#FF6A00')
+        .fontColor('#C05040')
+        .backgroundColor('#FFF8F2')
         .borderRadius(25)
+        .border({ width: 1, color: '#C05040' })
         .margin({ top: 12 })
         .enabled(!this.isLoading)
         .onClick(() => {
@@ -204,16 +205,21 @@ export struct LoginPage {
       return;
     }
 
+    if (this.isLoading) {
+      return;
+    }
+
     this.isLoading = true;
 
     try {
-      const result = await UserService.login(this.account.trim(), this.password);
+      const result: LoginResult = await UserService.login(this.account.trim(), this.password);
       this.isLoading = false;
 
       if (result.success) {
         AppStorage.SetOrCreate('isLogin', true);
         AppStorage.SetOrCreate('username', result.username || this.account.trim());
-        promptAction.showToast({ message: '登录成功' });
+
+        promptAction.showToast({ message: result.message || '登录成功' });
         router.back();
       } else {
         promptAction.showToast({ message: result.message || '登录失败' });
@@ -225,7 +231,33 @@ export struct LoginPage {
     }
   }
 
-  doHuaweiLogin(): void {
-    promptAction.showToast({ message: '华为账号登录暂未接入' });
+  async doHuaweiLogin(): Promise<void> {
+    if (this.isLoading) {
+      return;
+    }
+
+    this.isLoading = true;
+
+    try {
+      const result: LoginResult = await UserService.huaweiLogin();
+      this.isLoading = false;
+
+      if (result.success) {
+        AppStorage.SetOrCreate('isLogin', true);
+
+        if (result.username) {
+          AppStorage.SetOrCreate('username', result.username);
+        }
+
+        promptAction.showToast({ message: result.message || '华为账号登录成功' });
+        router.back();
+      } else {
+        promptAction.showToast({ message: result.message || '华为账号登录失败' });
+      }
+    } catch (error) {
+      this.isLoading = false;
+      console.error(`[LoginPage] 华为账号登录异常 ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '华为账号登录失败，请稍后重试' });
+    }
   }
 }
