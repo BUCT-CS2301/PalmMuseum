@@ -41,7 +41,7 @@ export struct MyFavoritesPage {
   }
 
   private hasCustomGroup(): boolean {
-    return this.favoriteGroups.length > FAVORITE_GROUPS.length;
+    return this.favoriteGroups.some((groupName: string) => FAVORITE_GROUPS.indexOf(groupName) === -1);
   }
 
   private shouldShowGroupTools(): boolean {
@@ -196,7 +196,7 @@ export struct MyFavoritesPage {
           .onClick(async () => {
             await interactionStore.deleteFavoriteGroup(this.username, this.selectedGroup);
             this.selectedGroup = ALL_GROUP;
-            promptAction.showToast({ message: '收藏夹已删除，内容已迁移到默认分组' });
+            promptAction.showToast({ message: '收藏夹已删除，组内收藏已同步移除' });
             await this.loadFavorites();
           })
       }

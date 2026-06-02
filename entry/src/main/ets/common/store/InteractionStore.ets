@@ -15,6 +15,7 @@ import {
   UploadDraft,
   UserInteractionStats
 } from '../models/InteractionModels';
+import { InteractionApiService } from '../services/InteractionApiService';
 import { preferencesUtil } from '../utils/PreferencesUtil';
 
 interface CommentResult {
@@ -116,6 +117,109 @@ class InteractionStore {
     return this.uniqueStrings([...FAVORITE_GROUPS, ...customGroups]);
   }
 
+  private async saveFavoriteGroupsToLocal(username: string, groups: string[]): Promise<string[]> {
+    const displayGroups = this.uniqueStrings(groups);
+    const groupObj = await this.getJsonValue<Record<string, string[]>>(this.favoriteGroupKey, {});
+    const groupMap = this.objectToMap<string[]>(groupObj);
+    const customGroups = displayGroups.filter((item: string) => FAVORITE_GROUPS.indexOf(item) === -1);
+    groupMap.set(username, customGroups);
+    await this.setJsonValue(this.favoriteGroupKey, this.mapToObject(groupMap));
+    return this.uniqueStrings([...FAVORITE_GROUPS, ...customGroups]);
+  }
+
+  private async getLocalLikeItems(username: string): Promise<LikeItem[]> {
+    if (!username) {
+      return [];
+    }
+    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
+    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
+    return likeItemsMap.get(username) || [];
+  }
+
+  private async saveLocalLikeItems(username: string, items: LikeItem[]): Promise<void> {
+    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
+    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
+    likeItemsMap.set(username, items);
+    await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
+  }
+
+  private async getLocalFavoriteItems(username: string): Promise<FavoriteItem[]> {
+    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
+    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
+    return favoriteMap.get(username) || [];
+  }
+
+  private async saveLocalFavoriteItems(username: string, items: FavoriteItem[]): Promise<void> {
+    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
+    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
+    favoriteMap.set(username, items);
+    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+  }
+
+  private async getLocalHistoryItems(username: string): Promise<HistoryItem[]> {
+    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
+    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
+    return historyMap.get(username) || [];
+  }
+
+  private async saveLocalHistoryItems(username: string, items: HistoryItem[]): Promise<void> {
+    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
+    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
+    historyMap.set(username, items);
+    await this.setJsonValue(this.historyKey, this.mapToObject(historyMap));
+  }
+
+  private async ensureLocalFavoriteGroup(username: string, groupName: string): Promise<void> {
+    const groups = await this.loadFavoriteGroups(username);
+    if (groups.indexOf(groupName) > -1) {
+      return;
+    }
+    await this.saveFavoriteGroupsToLocal(username, [...groups, groupName]);
+  }
+
+  private async setLocalLikeState(
+    artifactId: string,
+    username: string,
+    active: boolean,
+    artifact?: Artifact
+  ): Promise<void> {
+    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
+    const likeMap = this.objectToMap<string[]>(likeObj);
+    const users = likeMap.get(artifactId) || [];
+    const existingIndex = users.indexOf(username);
+    if (active && existingIndex === -1) {
+      users.unshift(username);
+    }
+    if (!active && existingIndex > -1) {
+      users.splice(existingIndex, 1);
+    }
+    likeMap.set(artifactId, users);
+    await this.setJsonValue(this.likeKey, this.mapToObject(likeMap));
+
+    const currentItems = await this.getLocalLikeItems(username);
+    let nextItems = currentItems.filter((item: LikeItem) => item.artifactId !== artifactId);
+    if (active && artifact) {
+      nextItems = [this.buildLikeItem(artifact), ...nextItems];
+    }
+    await this.saveLocalLikeItems(username, nextItems);
+  }
+
+  private async setLocalFavoriteState(
+    artifact: Artifact,
+    username: string,
+    groupName: string,
+    active: boolean
+  ): Promise<void> {
+    const currentItems = await this.getLocalFavoriteItems(username);
+    let nextItems = currentItems.filter((item: FavoriteItem) => item.artifactId !== artifact.id);
+    if (active) {
+      await this.ensureLocalFavoriteGroup(username, groupName);
+      const normalizedGroup = await this.normalizeFavoriteGroupForUser(username, groupName);
+      nextItems = [this.buildFavoriteItem(artifact, normalizedGroup), ...nextItems];
+    }
+    await this.saveLocalFavoriteItems(username, nextItems);
+  }
+
   private async normalizeFavoriteGroupForUser(username: string, groupName: string): Promise<string> {
     const groups = await this.loadFavoriteGroups(username);
     return groups.indexOf(groupName) > -1 ? groupName : groups[0];
@@ -177,6 +281,14 @@ class InteractionStore {
       cloned.likedByCurrentUser = item.likedByCurrentUser;
     }
     return cloned;
+  }
+
+  private mapRemoteReviewStatus(status?: string): ReviewStatus {
+    const normalized = status ? status.toUpperCase() : '';
+    if (normalized === 'APPROVED') {
+      return ReviewStatus.Approved;
+    }
+    return ReviewStatus.Pending;
   }
 
   private shouldAutoApproveComment(item: CommentItem): boolean {
@@ -322,6 +434,14 @@ class InteractionStore {
   }
 
   async getLikeSummary(artifactId: string, username: string = ''): Promise<InteractionSummary> {
+    if (username) {
+      try {
+        const snapshots = await this.getLocalLikeItems(username);
+        return await InteractionApiService.getArtifactLikeSummary(artifactId, username, snapshots);
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取点赞摘要失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
     const likeMap = this.objectToMap<string[]>(likeObj);
     const users = likeMap.get(artifactId) || [];
@@ -333,6 +453,21 @@ class InteractionStore {
 
   // 修改后的 toggleLike，支持 artifact 参数
   async toggleLike(artifactId: string, username: string, artifact?: Artifact): Promise<InteractionSummary> {
+    if (username) {
+      try {
+        let summary = await this.getLikeSummary(artifactId, username);
+        if (summary.active) {
+          summary = await InteractionApiService.unlikeArtifact(artifactId);
+        } else {
+          summary = await InteractionApiService.likeArtifact(artifactId);
+        }
+        await this.setLocalLikeState(artifactId, username, summary.active, artifact);
+        await this.syncProfileStats(username);
+        return summary;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端切换文物点赞失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     // 1. 更新旧存储（文物→用户列表）
     const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
     const likeMap = this.objectToMap<string[]>(likeObj);
@@ -372,13 +507,29 @@ class InteractionStore {
     if (!username) {
       return [];
     }
-    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
-    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
-    return likeItemsMap.get(username) || [];
+    try {
+      const snapshots = await this.getLocalLikeItems(username);
+      const remoteItems = await InteractionApiService.getLikes(username, snapshots);
+      await this.saveLocalLikeItems(username, remoteItems);
+      return remoteItems;
+    } catch (error) {
+      console.error(`[InteractionStore] 远端获取点赞列表失败，回退本地: ${JSON.stringify(error)}`);
+    }
+    return this.getLocalLikeItems(username);
   }
 
   // 新增：取消点赞（无需 artifact 对象）
   async removeLike(artifactId: string, username: string): Promise<void> {
+    if (username) {
+      try {
+        await InteractionApiService.unlikeArtifact(artifactId);
+        await this.setLocalLikeState(artifactId, username, false);
+        await this.syncProfileStats(username);
+        return;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端取消点赞失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     // 1. 更新旧存储（文物→用户列表）
     const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
     const likeMap = this.objectToMap<string[]>(likeObj);
@@ -403,6 +554,14 @@ class InteractionStore {
   }
 
   async getFavoriteSummary(artifactId: string, username: string = ''): Promise<InteractionSummary> {
+    if (username) {
+      try {
+        const snapshots = await this.getLocalFavoriteItems(username);
+        return await InteractionApiService.getArtifactFavoriteSummary(artifactId, username, snapshots);
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取收藏摘要失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
     const isActive = username
@@ -425,6 +584,28 @@ class InteractionStore {
     username: string,
     groupName: string = FAVORITE_GROUPS[0]
   ): Promise<InteractionSummary> {
+    if (username) {
+      try {
+        const current = await this.getFavoriteSummary(artifact.id, username);
+        let summary: InteractionSummary;
+        if (current.active) {
+          await InteractionApiService.removeFavorite(username, artifact.id);
+          await this.setLocalFavoriteState(artifact, username, groupName, false);
+          summary = {
+            active: false,
+            count: Math.max(0, current.count - 1)
+          };
+        } else {
+          await InteractionApiService.addFavorite(username, artifact.id, groupName);
+          await this.setLocalFavoriteState(artifact, username, groupName, true);
+          summary = await this.getFavoriteSummary(artifact.id, username);
+        }
+        await this.syncProfileStats(username);
+        return summary;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端切换收藏失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
     const list = favoriteMap.get(username) || [];
@@ -442,12 +623,10 @@ class InteractionStore {
   }
 
   async getFavorites(username: string): Promise<FavoriteItem[]> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const favorites = favoriteMap.get(username) || [];
+    const favorites = await this.getLocalFavoriteItems(username);
     const groups = await this.loadFavoriteGroups(username);
     const fallbackGroup = groups.length > 0 ? groups[0] : this.getDefaultFavoriteGroup();
-    return favorites.map((item: FavoriteItem): FavoriteItem => {
+    const normalizeLocalFavorites = (): FavoriteItem[] => favorites.map((item: FavoriteItem): FavoriteItem => {
       const normalizedItem: FavoriteItem = {
         artifactId: item.artifactId,
         title: item.title,
@@ -459,9 +638,28 @@ class InteractionStore {
       };
       return normalizedItem;
     });
+    if (username) {
+      try {
+        const remoteFavorites = await InteractionApiService.getFavorites(username, normalizeLocalFavorites());
+        await this.saveLocalFavoriteItems(username, remoteFavorites);
+        await this.saveFavoriteGroupsToLocal(username, remoteFavorites.map((item: FavoriteItem) => item.groupName));
+        return remoteFavorites;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取收藏列表失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
+    return normalizeLocalFavorites();
   }
 
   async getFavoriteGroups(username: string): Promise<string[]> {
+    if (username) {
+      try {
+        const remoteGroups = await InteractionApiService.getFavoriteGroups(username);
+        return await this.saveFavoriteGroupsToLocal(username, remoteGroups);
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取收藏夹失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     return this.loadFavoriteGroups(username);
   }
 
@@ -469,6 +667,12 @@ class InteractionStore {
     const trimmed = groupName.trim();
     if (!username || !trimmed) {
       return this.loadFavoriteGroups(username);
+    }
+    try {
+      const remoteGroups = await InteractionApiService.addFavoriteGroup(username, trimmed);
+      return await this.saveFavoriteGroupsToLocal(username, remoteGroups);
+    } catch (error) {
+      console.error(`[InteractionStore] 远端新建收藏夹失败，回退本地: ${JSON.stringify(error)}`);
     }
     const groupObj = await this.getJsonValue<Record<string, string[]>>(this.favoriteGroupKey, {});
     const groupMap = this.objectToMap<string[]>(groupObj);
@@ -482,8 +686,19 @@ class InteractionStore {
     if (!username || FAVORITE_GROUPS.indexOf(groupName) > -1) {
       return this.loadFavoriteGroups(username);
     }
+    try {
+      const remoteGroups = await InteractionApiService.deleteFavoriteGroup(username, groupName);
+      const currentFavorites = await this.getLocalFavoriteItems(username);
+      await this.saveLocalFavoriteItems(
+        username,
+        currentFavorites.filter((item: FavoriteItem) => item.groupName !== groupName)
+      );
+      await this.syncProfileStats(username);
+      return await this.saveFavoriteGroupsToLocal(username, remoteGroups);
+    } catch (error) {
+      console.error(`[InteractionStore] 远端删除收藏夹失败，回退本地: ${JSON.stringify(error)}`);
+    }
     const nextGroups = (await this.loadFavoriteGroups(username)).filter((item: string) => item !== groupName);
-    const fallbackGroup = nextGroups.length > 0 ? nextGroups[0] : this.getDefaultFavoriteGroup();
     const groupObj = await this.getJsonValue<Record<string, string[]>>(this.favoriteGroupKey, {});
     const groupMap = this.objectToMap<string[]>(groupObj);
     const customGroups = nextGroups.filter((item: string) => FAVORITE_GROUPS.indexOf(item) === -1);
@@ -492,18 +707,7 @@ class InteractionStore {
 
     const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const favorites = (favoriteMap.get(username) || []).map((item: FavoriteItem): FavoriteItem => {
-      const nextItem: FavoriteItem = {
-        artifactId: item.artifactId,
-        title: item.title,
-        imageUrl: item.imageUrl,
-        period: item.period,
-        museum: item.museum,
-        groupName: item.groupName === groupName ? fallbackGroup : item.groupName,
-        createdAt: item.createdAt
-      };
-      return nextItem;
-    });
+    const favorites = (favoriteMap.get(username) || []).filter((item: FavoriteItem) => item.groupName !== groupName);
     favoriteMap.set(username, favorites);
     await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
     await this.syncProfileStats(username);
@@ -518,6 +722,15 @@ class InteractionStore {
   }
 
   async getFavoriteGroupSummaries(username: string): Promise<FavoriteGroupSummary[]> {
+    if (username) {
+      try {
+        const summaries = await InteractionApiService.getFavoriteGroupSummaries(username);
+        await this.saveFavoriteGroupsToLocal(username, summaries.map((item: FavoriteGroupSummary) => item.name));
+        return summaries;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取收藏夹统计失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const favorites = await this.getFavorites(username);
     const groups = await this.loadFavoriteGroups(username);
     return groups.map((groupName: string): FavoriteGroupSummary => {
@@ -531,6 +744,23 @@ class InteractionStore {
   }
 
   async moveFavoriteToGroup(artifactId: string, username: string, groupName: string): Promise<string> {
+    if (username) {
+      try {
+        await InteractionApiService.moveFavorite(username, artifactId, groupName);
+        const localFavorites = await this.getLocalFavoriteItems(username);
+        const target = localFavorites.find((item: FavoriteItem) => item.artifactId === artifactId);
+        if (target) {
+          target.groupName = await this.normalizeFavoriteGroupForUser(username, groupName);
+          await this.saveLocalFavoriteItems(username, localFavorites);
+          await this.ensureLocalFavoriteGroup(username, target.groupName);
+          return target.groupName;
+        }
+        await this.ensureLocalFavoriteGroup(username, groupName);
+        return await this.normalizeFavoriteGroupForUser(username, groupName);
+      } catch (error) {
+        console.error(`[InteractionStore] 远端切换收藏分组失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
     const favorites = favoriteMap.get(username) || [];
@@ -554,6 +784,20 @@ class InteractionStore {
   }
 
   async removeFavorite(artifactId: string, username: string): Promise<void> {
+    if (username) {
+      try {
+        await InteractionApiService.removeFavorite(username, artifactId);
+        const localFavorites = await this.getLocalFavoriteItems(username);
+        await this.saveLocalFavoriteItems(
+          username,
+          localFavorites.filter((item: FavoriteItem) => item.artifactId !== artifactId)
+        );
+        await this.syncProfileStats(username);
+        return;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端取消收藏失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
     favoriteMap.set(username, (favoriteMap.get(username) || []).filter((item: FavoriteItem) => item.artifactId !== artifactId));
@@ -565,19 +809,29 @@ class InteractionStore {
     if (!username) {
       return;
     }
-    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
-    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
-    const currentHistory = historyMap.get(username) || [];
+    const currentHistory = await this.getLocalHistoryItems(username);
     const filtered = currentHistory.filter((item: HistoryItem) => item.artifactId !== artifact.id);
     filtered.unshift(this.buildHistoryItem(artifact));
-    historyMap.set(username, filtered.slice(0, MAX_HISTORY));
-    await this.setJsonValue(this.historyKey, this.mapToObject(historyMap));
+    await this.saveLocalHistoryItems(username, filtered.slice(0, MAX_HISTORY));
+    try {
+      await InteractionApiService.recordHistory(username, artifact.id);
+    } catch (error) {
+      console.error(`[InteractionStore] 远端记录浏览历史失败，保留本地记录: ${JSON.stringify(error)}`);
+    }
   }
 
   async getHistory(username: string): Promise<HistoryItem[]> {
-    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
-    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
-    return historyMap.get(username) || [];
+    const localHistory = await this.getLocalHistoryItems(username);
+    if (username) {
+      try {
+        const remoteHistory = await InteractionApiService.getHistory(username, localHistory);
+        await this.saveLocalHistoryItems(username, remoteHistory);
+        return remoteHistory;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端获取浏览历史失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
+    return localHistory;
   }
 
   async getCommentsForArtifact(artifactId: string, username: string = ''): Promise<CommentItem[]> {
@@ -589,6 +843,16 @@ class InteractionStore {
     const ownPending = username
       ? current.filter((item: CommentItem) => item.username === username && item.status !== ReviewStatus.Approved)
       : [];
+    try {
+      const remoteComments = await InteractionApiService.getCommentsForArtifact(artifactId);
+      const mergedRemote = this.sortByDateDesc<CommentItem>([
+        ...remoteComments,
+        ...ownPending.filter((item: CommentItem) => remoteComments.findIndex((remote: CommentItem) => remote.id === item.id) === -1)
+      ]);
+      return this.enrichComments(mergedRemote, username);
+    } catch (error) {
+      console.error(`[InteractionStore] 远端获取评论列表失败，回退本地: ${JSON.stringify(error)}`);
+    }
     const merged = this.sortByDateDesc<CommentItem>([
       ...this.getSeedComments(artifactId),
       ...approved,
@@ -607,6 +871,22 @@ class InteractionStore {
   }
 
   async toggleCommentLike(commentId: string, username: string): Promise<InteractionSummary> {
+    if (username) {
+      try {
+        const summary = await InteractionApiService.likeComment(commentId);
+        const likeMap = await this.getCommentLikeMap();
+        const users = likeMap.get(commentId) || [];
+        if (users.indexOf(username) === -1) {
+          users.unshift(username);
+          likeMap.set(commentId, users);
+          await this.setJsonValue(this.commentLikeKey, this.mapToObject(likeMap));
+        }
+        await this.syncProfileStats(username);
+        return summary;
+      } catch (error) {
+        console.error(`[InteractionStore] 远端评论点赞失败，回退本地: ${JSON.stringify(error)}`);
+      }
+    }
     const likeMap = await this.getCommentLikeMap();
     const users = likeMap.get(commentId) || [];
     const existingIndex = users.indexOf(username);
@@ -642,6 +922,32 @@ class InteractionStore {
       return { ok: false, message: '评论包含敏感词，请修改后再试' };
     }
 
+    try {
+      const remoteResult = await InteractionApiService.addComment(artifact.id, trimmed, parentId);
+      const comments = await this.getJsonValue<CommentItem[]>(this.commentKey, []);
+      const record: CommentItem = {
+        id: remoteResult.objectId || `comment-${Date.now()}`,
+        artifactId: artifact.id,
+        artifactTitle: artifact.title,
+        username: username,
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+        status: this.mapRemoteReviewStatus(remoteResult.status)
+      };
+      if (parentId) {
+        record.parentId = parentId;
+      }
+      if (replyTo) {
+        record.replyTo = replyTo;
+      }
+      comments.unshift(record);
+      await this.setJsonValue(this.commentKey, comments);
+      await this.syncProfileStats(username);
+      return { ok: true, message: remoteResult.message || '评论已提交，等待审核' };
+    } catch (error) {
+      console.error(`[InteractionStore] 远端发表评论失败，回退本地: ${JSON.stringify(error)}`);
+    }
+
     const comments = await this.getJsonValue<CommentItem[]>(this.commentKey, []);
     const record: CommentItem = {
       id: `comment-${Date.now()}`,
@@ -668,6 +974,19 @@ class InteractionStore {
     const comments = await this.syncCommentReviewStatus(
       await this.getJsonValue<CommentItem[]>(this.commentKey, [])
     );
+    try {
+      const remoteComments = await InteractionApiService.getUserComments(username);
+      const localPending = comments.filter((item: CommentItem) => {
+        return item.username === username && item.status !== ReviewStatus.Approved;
+      });
+      const mergedRemote = this.sortByDateDesc<CommentItem>([
+        ...remoteComments,
+        ...localPending.filter((item: CommentItem) => remoteComments.findIndex((remote: CommentItem) => remote.id === item.id) === -1)
+      ]);
+      return this.enrichComments(mergedRemote, username);
+    } catch (error) {
+      console.error(`[InteractionStore] 远端获取我的评论失败，回退本地: ${JSON.stringify(error)}`);
+    }
     const current = this.sortByDateDesc<CommentItem>(
       comments.filter((item: CommentItem) => item.username === username)
     );
@@ -702,12 +1021,38 @@ class InteractionStore {
     if (!username) {
       return DEFAULT_PRIVACY_SETTINGS;
     }
+
+    try {
+      const remotePrivacy = await InteractionApiService.getPrivacy(username);
+      const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
+      const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
+      privacyMap.set(username, remotePrivacy);
+      await this.setJsonValue(this.privacyKey, this.mapToObject(privacyMap));
+      return remotePrivacy;
+    } catch (error) {
+      console.error(`[InteractionStore] 远端获取隐私设置失败，回退本地: ${JSON.stringify(error)}`);
+    }
     const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
     const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
     return privacyMap.get(username) || DEFAULT_PRIVACY_SETTINGS;
   }
 
   async savePrivacy(username: string, privacy: PrivacySettings): Promise<void> {
+    if (!username) {
+      throw new Error('[InteractionStore] savePrivacy 失败：username 为空');
+    }
+
+    try {
+      const saved = await InteractionApiService.savePrivacy(username, privacy);
+      const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
+      const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
+      privacyMap.set(username, saved);
+      await this.setJsonValue(this.privacyKey, this.mapToObject(privacyMap));
+      console.info(`[InteractionStore] 远端保存隐私设置成功 username=${username}, privacy=${JSON.stringify(saved)}`);
+      return;
+    } catch (error) {
+      console.error(`[InteractionStore] 远端保存隐私设置失败，回退本地: ${JSON.stringify(error)}`);
+    }
     const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
     const privacyMap = this.objectToMap<PrivacySettings>(privacyObj);
     privacyMap.set(username, privacy);
@@ -719,16 +1064,10 @@ class InteractionStore {
     const uploads = await this.getUploads(username);
     const comments = await this.getUserComments(username);
     const history = await this.getHistory(username);
-    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
-    const likeMap = this.objectToMap<string[]>(likeObj);
+    const likesList = await this.getLikes(username);
     const commentLikeMap = await this.getCommentLikeMap();
 
-    let likes = 0;
-    likeMap.forEach((users: string[]) => {
-      if (users.indexOf(username) > -1) {
-        likes += 1;
-      }
-    });
+    let likes = likesList.length;
     commentLikeMap.forEach((users: string[]) => {
       if (users.indexOf(username) > -1) {
         likes += 1;

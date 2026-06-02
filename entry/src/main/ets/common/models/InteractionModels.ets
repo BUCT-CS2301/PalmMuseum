@@ -106,8 +106,5 @@ export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
 };
 
 export const FAVORITE_GROUPS: string[] = [
-  '默认收藏夹',
-  '课堂资料',
-  '细看展柜',
-  '参观打卡'
+  '默认收藏夹'
 ];

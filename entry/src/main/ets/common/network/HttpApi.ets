@@ -123,4 +123,35 @@ export class HttpApi {
       httpRequest.destroy();
     }
   }
+
+  static async delete<T>(url: string): Promise<T> {
+    const httpRequest = http.createHttp();
+    try {
+      const token = HttpApi.getToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await httpRequest.request(`${BASE_URL}${url}`, {
+        method: http.RequestMethod.DELETE,
+        connectTimeout: 10000,
+        readTimeout: 10000,
+        header: headers
+      });
+
+      if (response.responseCode === 200) {
+        return JSON.parse(response.result as string) as T;
+      } else if (response.responseCode === 401) {
+        AppStorage.SetOrCreate('isLogin', false);
+        throw new Error('登录已过期，请重新登录');
+      } else {
+        throw new Error(`请求失败: ${response.responseCode}`);
+      }
+    } catch (e) {
+      throw new Error(`网络请求异常: ${JSON.stringify(e)}`);
+    } finally {
+      httpRequest.destroy();
+    }
+  }
 }

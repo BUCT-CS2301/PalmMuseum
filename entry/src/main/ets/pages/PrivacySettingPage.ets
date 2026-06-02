@@ -48,7 +48,7 @@ export struct PrivacySettingPage {
       }
       .width('100%')
 
-      Text('设置会实时保存到本地，后续接入后端时可直接映射到用户配置接口。')
+      Text('设置会实时保存，已优先接入后端隐私接口。')
         .fontSize(12)
         .fontColor('#8B7355')
         .width('100%')
