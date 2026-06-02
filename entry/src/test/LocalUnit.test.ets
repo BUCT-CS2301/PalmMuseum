@@ -3,8 +3,8 @@ import {
   ImageSearchService,
   FEATURE_DIM,
   DEFAULT_THRESHOLD
-} from '../main/ets/common/services/ImageSearchService';
-import type { DecodedImage, VectorEntry, SearchResult } from '../main/ets/common/services/ImageSearchService';
+} from '../main/ets/common/services/BackendImageSearchService.ets';
+import type { DecodedImage, VectorEntry, SearchResult } from '../main/ets/common/services/BackendImageSearchService.ets';
 import { Artifact, mockArtifacts } from '../main/ets/common/models/Artifact';
 
 // ---------------------------------------------------------------------------
