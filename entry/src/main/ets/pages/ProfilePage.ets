@@ -184,7 +184,10 @@ export struct ProfilePage {
     AppStorage.SetOrCreate('isLogin', false);
     AppStorage.SetOrCreate('username', '');
     AppStorage.SetOrCreate('userId', '');
-    this.loadProfile();
+    AppStorage.SetOrCreate('token', '');
+    AppStorage.SetOrCreate('refreshToken', '');
+
+    this.profile = { username: '', avatar: '', bio: '' };
     promptAction.showToast({ message: '已退出登录' });
   }
 }

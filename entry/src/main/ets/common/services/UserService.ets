@@ -136,24 +136,12 @@ export class UserService {
     }
   }
 
-  // ==================== 华为登录（暂用 mock） ====================
+  // ==================== 华为登录（暂未实现） ====================
   static async huaweiLogin(): Promise<LoginResult> {
-    await new Promise<void>((resolve) => setTimeout(resolve, 600));
-    const huaweiUser: MockUser = {
-      username: 'huawei_test',
-      password: 'huawei123',
-      email: 'huawei@example.com'
+    return {
+      success: false,
+      message: '华为账号登录暂未接入'
     };
-    if (!mockUsers.some(u => u.username === huaweiUser.username)) {
-      mockUsers.push(huaweiUser);
-      userProfiles.set(huaweiUser.username, {
-        username: huaweiUser.username,
-        avatar: '',
-        bio: ''
-      });
-    }
-    const result: LoginResult = { success: true, username: huaweiUser.username };
-    return result;
   }
 
   // ==================== 获取用户资料 ====================

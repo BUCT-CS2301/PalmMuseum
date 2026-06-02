@@ -4,32 +4,42 @@ import picker from '@ohos.file.picker';
 import common from '@ohos.app.ability.common';
 import abilityAccessCtrl, { Permissions } from '@ohos.abilityAccessCtrl';
 import router from '@ohos.router';
+import { cameraPicker, camera } from '@kit.CameraKit';
+import { ImageSearchService } from '../common/services/ImageSearchService';
+import type { SearchResult } from '../common/services/ImageSearchService';
+import { createDeviceImageDecoder } from '../common/services/ImageDecoder';
+import { createMockArtifactSource, createHttpArtifactSource } from '../common/services/ArtifactRepository';
 
 /**
- * 文物条目类型定义
+ * 传给结果页的单条搜索结果（可 JSON 序列化）。
+ * objectId = 文物 id，点击结果跳详情时用它。
  */
-interface ArtifactItem {
-  id: number;
-  name: string;
-  era: string;
-  image: string;
-  similarity: number;
+interface SearchResultDTO {
+  objectId: string;
+  title: string;
+  period: string;
+  type: string;
+  material: string;
+  imageUrl: string;
+  similarity: number; // 0~1 的余弦相似度
 }
 
 /**
- * 路由参数类型
+ * 全局共享的搜索服务（建库一次后常驻内存，避免每次搜索重算全库）。
+ * 注入真机解码器 + 数据源。
  */
-interface RouterParams {
-  image: string;
-  results: string;
-}
+let sharedSearchService: ImageSearchService | null = null;
 
-/**
- * 路由配置类型
- */
-interface RouterOptions {
-  url: string;
-  params: RouterParams;
+function getSearchService(context: common.UIAbilityContext): ImageSearchService {
+  if (!sharedSearchService) {
+    sharedSearchService = new ImageSearchService({
+      decode: createDeviceImageDecoder(context),
+      // 已切真实后端：走 GET /api/v1/data/relics 拉文物建库（需先登录拿到 token）。
+      // 如需回离线示例图演示，把下面这行换成 createMockArtifactSource() 即可。
+      source: createHttpArtifactSource()
+    });
+  }
+  return sharedSearchService;
 }
 
 @Entry
@@ -44,37 +54,8 @@ export struct DiscoverPage {
   // 选中的图片
   @State selectedImage: string = '';
 
-  // 模拟文物数据
-  private readonly mockArtifacts: ArtifactItem[] = [
-    {
-      id: 1,
-      name: '青花瓷瓶',
-      era: '明代',
-      image: 'https://img2.baidu.com/it/u=3871232861,3188699794&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 2,
-      name: '唐三彩马',
-      era: '唐代',
-      image: 'https://img2.baidu.com/it/u=3103356365,1527751139&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 3,
-      name: '玉琮',
-      era: '良渚文化',
-      image: 'https://img1.baidu.com/it/u=1679148656,2910535149&fm=253&fmt=auto',
-      similarity: 0
-    },
-    {
-      id: 4,
-      name: '青铜鼎',
-      era: '商代',
-      image: 'https://img0.baidu.com/it/u=4119932281,1072797093&fm=253&fmt=auto',
-      similarity: 0
-    }
-  ];
+  // 是否正在搜索（建库/提特征期间禁用按钮、给提示）
+  @State isSearching: boolean = false;
 
   /**
    * 申请拍照 / 相册权限
@@ -130,7 +111,7 @@ export struct DiscoverPage {
   }
 
   /**
-   * 拍照搜索
+   * 拍照搜索：调系统相机拍一张，拿到 uri 后走真实搜索流程（真机演示）
    */
   async openCamera(): Promise<void> {
     if (!await this.requestImagePermissions()) {
@@ -138,16 +119,26 @@ export struct DiscoverPage {
     }
 
     try {
-      this.selectedImage = 'camera_mock_image';
-      promptAction.showToast({ message: '拍照成功' });
-      this.startImageSearch();
+      const context = getContext(this) as common.Context;
+      const result = await cameraPicker.pick(
+        context,
+        [cameraPicker.PickerMediaType.PHOTO],
+        { cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK }
+      );
+      // resultCode 为 0 表示拍照成功
+      if (result && result.resultCode === 0 && result.resultUri) {
+        this.selectedImage = result.resultUri;
+        await this.runImageSearch(result.resultUri);
+      } else {
+        promptAction.showToast({ message: '已取消拍照' });
+      }
     } catch (err) {
       promptAction.showToast({ message: '打开相机失败' });
     }
   }
 
   /**
-   * 相册选择图片
+   * 相册选择图片：拿到 uri 后走真实搜索流程
    */
   async openAlbum(): Promise<void> {
     if (!await this.requestImagePermissions()) {
@@ -163,8 +154,7 @@ export struct DiscoverPage {
 
       if (result.photoUris.length > 0) {
         this.selectedImage = result.photoUris[0];
-        promptAction.showToast({ message: '图片选择成功' });
-        this.startImageSearch();
+        await this.runImageSearch(result.photoUris[0]);
       }
     } catch (err) {
       promptAction.showToast({ message: '选择图片失败' });
@@ -172,34 +162,57 @@ export struct DiscoverPage {
   }
 
   /**
-   * 模拟以图搜图逻辑
+   * 真实以图搜图流程：
+   * 1) 确保向量库已建（首次进入建一次，常驻内存）
+   * 2) 对查询图提特征
+   * 3) 余弦检索 + 阈值过滤 + 降序 topK
+   * 4) 带结果跳结果页（即使为空也跳，由结果页展示「搜不到」）
    */
-  startImageSearch(): void {
-    const resultList: ArtifactItem[] = [];
-
-    for (let i = 0; i < 3; i++) {
-      const item = this.mockArtifacts[i];
-
-      const resultItem: ArtifactItem = {
-        id: item.id,
-        name: item.name,
-        era: item.era,
-        image: item.image,
-        similarity: Math.floor(Math.random() * 36) + 60
-      };
-
-      resultList.push(resultItem);
+  async runImageSearch(uri: string): Promise<void> {
+    if (!uri || this.isSearching) {
+      return;
     }
+    this.isSearching = true;
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const service = getSearchService(context);
 
-    const routerOptions: RouterOptions = {
-      url: 'pages/ImageSearchResultPage',
-      params: {
-        image: this.selectedImage,
-        results: JSON.stringify(resultList)
+      // 首次搜索前建库（对每件文物的 rawfile 图提特征）
+      if (service.librarySize === 0) {
+        promptAction.showToast({ message: '正在建立文物特征库…' });
+        await service.initArtifactVectors();
       }
-    };
 
-    router.pushUrl(routerOptions);
+      // 查询图提特征 -> 检索
+      const queryVector = await service.extractImageFeature(uri);
+      const ranked: SearchResult[] = service.searchSimilarArtifacts(queryVector, 5, 0);
+      const HIT_THRESHOLD = 0.85;
+      const results: SearchResult[] =
+        (ranked.length > 0 && ranked[0].similarity >= HIT_THRESHOLD) ? ranked : [];
+      const dtoList: SearchResultDTO[] = results.map((r: SearchResult): SearchResultDTO => {
+        return {
+          objectId: r.artifact.id,
+          title: r.artifact.title,
+          period: r.artifact.period,
+          type: r.artifact.type,
+          material: r.artifact.material,
+          imageUrl: r.artifact.imageUrl,
+          similarity: r.similarity
+        };
+      });
+
+      router.pushUrl({
+        url: 'pages/ImageSearchResultPage',
+        params: {
+          image: uri,
+          results: JSON.stringify(dtoList)
+        }
+      });
+    } catch (err) {
+      promptAction.showToast({ message: '搜索失败：' + JSON.stringify(err) });
+    } finally {
+      this.isSearching = false;
+    }
   }
 
   build() {
@@ -355,24 +368,26 @@ export struct DiscoverPage {
         .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
 
-      Button('拍照搜索文物')
+      Button(this.isSearching ? '搜索中…' : '拍照搜索文物')
         .width('100%')
         .height(54)
         .fontSize(16)
         .backgroundColor('#C76B5A')           // 与文字搜索同色，统一柔和红
         .fontColor(Color.White)
         .borderRadius(12)
+        .enabled(!this.isSearching)
         .onClick(async () => {
           await this.openCamera();
         })
 
-      Button('从相册选择图片')
+      Button(this.isSearching ? '搜索中…' : '从相册选择图片')
         .width('100%')
         .height(54)
         .fontSize(16)
         .backgroundColor('#A68B6A')           // 浅褐
         .fontColor(Color.White)
         .borderRadius(12)
+        .enabled(!this.isSearching)
         .onClick(async () => {
           await this.openAlbum();
         })
