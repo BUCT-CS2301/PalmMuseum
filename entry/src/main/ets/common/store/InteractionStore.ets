@@ -1045,7 +1045,12 @@ class InteractionStore {
 
   async getPrivacy(username: string): Promise<PrivacySettings> {
     if (!username) {
-      return DEFAULT_PRIVACY_SETTINGS;
+      return {
+        showFavorites: true,
+        showLikes: true,
+        showComments: true,
+        showPhotos: true
+      };
     }
 
     try {
@@ -1083,6 +1088,7 @@ class InteractionStore {
     const privacyMap = this.entriesToMap<PrivacySettings>(privacyEntries);
     privacyMap.set(username, privacy);
     await this.setJsonValue(this.privacyKey, this.mapToEntries(privacyMap));
+    console.info(`[InteractionStore] 保存隐私设置成功 username=${username}, privacy=${JSON.stringify(privacy)}`);
   }
 
   async getStats(username: string): Promise<UserInteractionStats> {
