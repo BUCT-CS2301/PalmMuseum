@@ -1,43 +1,21 @@
 // common/services/UserService.ets
 import { HttpApi } from '../network/HttpApi';
 
-// ---------- 明确所有接口类型 ----------
-
-// 真实接口通用响应
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   code: number;
-  message?: string;
-  data?: T;
+  message: string;
+  data: T;
 }
 
-// 登录接口返回的 data 结构
-interface LoginData {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-}
+export type RegisterType = 'phone' | 'email';
 
-interface RegisterRequestBody {
-  username: string;
-  password: string;
-  role: string;
-  email?: string;
-  phone?: string;
-}
-
-// 本地 mock 用户类型
-interface MockUser {
-  username: string;
-  password: string;
-  email?: string;
-  phone?: string;
-}
-
-// 对外暴露的返回类型
 export interface LoginResult {
   success: boolean;
-  username?: string;
   message?: string;
+  username?: string;
+  userId?: string;
+  accessToken?: string;
+  refreshToken?: string;
 }
 
 export interface RegisterResult {
@@ -45,66 +23,158 @@ export interface RegisterResult {
   message?: string;
 }
 
-export interface UserInfo {
-  userId: string;
-  username: string;
-  avatar: string;
-  favorites?: Array<object>;
+export interface ChangePasswordResult {
+  success: boolean;
+  message?: string;
 }
 
 export interface UserProfile {
+  objectId?: string;
   username: string;
+  nickname?: string;
   avatar: string;
   bio: string;
+  phone?: string;
+  email?: string;
+  roles?: string[];
+  permissions?: string[];
+}
+
+interface LoginRequestBody {
+  username: string;
+  password: string;
+}
+
+interface LoginResponseData {
+  expiresIn: number;
+  accessToken: string;
+  refreshToken: string;
+  user?: CurrentUserData;
+}
+
+interface RegisterRequestBody {
+  username: string;
+  password: string;
+  nickname?: string;
+  phone?: string;
+  email?: string;
+}
+
+interface RegisterResponseData {
+  objectId?: string;
+  username?: string;
+  nickname?: string;
+  phone?: string;
+  email?: string;
+  avatar?: string;
+  createTime?: string;
 }
 
 interface CurrentUserData {
   objectId: string;
   username: string;
-  nickname: string;
-  avatar: string;
-  roles: string[];
+  nickname?: string;
+  avatar?: string;
+  bio?: string;
+  phone?: string;
+  email?: string;
+  roles?: string[];
+  permissions?: string[];
 }
 
-export type RegisterType = 'email' | 'phone';
+interface ChangePasswordRequestBody {
+  oldPassword: string;
+  newPassword: string;
+}
 
-// ---------- 本地 mock 数据 ----------
-const USE_MOCK_PROFILE: boolean = true;
+interface HuaweiLoginRequestBody {
+  openId: string;
+  unionId?: string;
+  nickname?: string;
+  avatar?: string;
+  email?: string;
+}
 
-const mockUsers: MockUser[] = [
-  { username: 'test', password: '123456', email: 'test@example.com' } as MockUser,
-  { username: 'admin', password: 'admin', phone: '13800138000' } as MockUser
-];
-
-const userProfiles: Map<string, UserProfile> = new Map();
+interface HuaweiLoginResponseData {
+  expiresIn: number;
+  accessToken: string;
+  refreshToken: string;
+  user?: CurrentUserData;
+}
 
 export class UserService {
-  // ==================== 登录（真实接口） ====================
-  static async login(account: string, password: string): Promise<LoginResult> {
+  static async login(username: string, password: string): Promise<LoginResult> {
     try {
-      const body: Record<string, string> = {
-        'username': account,
-        'password': password
+      const body: LoginRequestBody = {
+        username: username.trim(),
+        password: password
       };
-      const res = await HttpApi.post<ApiResponse<LoginData>>('/auth/login', body);
-      if (res.code === 200 && res.data) {
-        AppStorage.SetOrCreate('token', res.data.accessToken);
-        AppStorage.SetOrCreate('refreshToken', res.data.refreshToken);
-        const result: LoginResult = { success: true, username: account };
-        return result;
-      } else {
-        const msg: string = res.message ?? '账号或密码错误';
-        const result: LoginResult = { success: false, message: msg };
-        return result;
+
+      const res = await HttpApi.post<ApiResponse<LoginResponseData>>(
+        '/auth/login',
+        body,
+        { skipAuth: true }
+      );
+
+      if (res.code !== 200 || !res.data || !res.data.accessToken) {
+        return {
+          success: false,
+          message: res.message || '登录失败'
+        };
+      }
+
+      AppStorage.SetOrCreate('token', res.data.accessToken);
+      AppStorage.SetOrCreate('refreshToken', res.data.refreshToken || '');
+      AppStorage.SetOrCreate('isLogin', true);
+
+      if (res.data.user) {
+        AppStorage.SetOrCreate('userId', res.data.user.objectId || '');
+        AppStorage.SetOrCreate('username', res.data.user.username || username.trim());
+
+        return {
+          success: true,
+          message: '登录成功',
+          username: res.data.user.username || username.trim(),
+          userId: res.data.user.objectId || '',
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken
+        };
+      }
+
+      try {
+        const profile: UserProfile = await UserService.getProfile();
+
+        AppStorage.SetOrCreate('userId', profile.objectId || '');
+        AppStorage.SetOrCreate('username', profile.username || username.trim());
+
+        return {
+          success: true,
+          message: '登录成功',
+          username: profile.username || username.trim(),
+          userId: profile.objectId || '',
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken
+        };
+      } catch (e) {
+        AppStorage.SetOrCreate('username', username.trim());
+
+        return {
+          success: true,
+          message: '登录成功',
+          username: username.trim(),
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken
+        };
       }
     } catch (e) {
-      const errorMsg: string = (e as Error).message || '网络连接失败';
-      const result: LoginResult = { success: false, message: errorMsg };
-      return result;
+      const error = e as Error;
+      return {
+        success: false,
+        message: error.message || '登录失败'
+      };
     }
   }
 
-  // ==================== 注册 ====================
   static async register(
     username: string,
     password: string,
@@ -112,113 +182,158 @@ export class UserService {
     value: string
   ): Promise<RegisterResult> {
     try {
-      const roleCode: string = 'USER';
-
       const body: RegisterRequestBody = {
-        username: username,
+        username: username.trim(),
         password: password,
-        role: roleCode
+        nickname: username.trim()
       };
 
-      if (type === 'email') {
-        body.email = value;
+      if (type === 'phone') {
+        body.phone = value.trim();
       } else {
-        body.phone = value;
+        body.email = value.trim();
       }
 
-      await HttpApi.post<ApiResponse<Object>>('/users', body);
-      const result: RegisterResult = { success: true };
-      return result;
+      const res = await HttpApi.post<ApiResponse<RegisterResponseData>>(
+        '/auth/register',
+        body,
+        { skipAuth: true }
+      );
+
+      if (res.code === 200) {
+        return {
+          success: true,
+          message: res.message || '注册成功'
+        };
+      }
+
+      return {
+        success: false,
+        message: res.message || '注册失败'
+      };
     } catch (e) {
       const error = e as Error;
-      const result: RegisterResult = { success: false, message: error.message || '注册失败' };
-      return result;
+      return {
+        success: false,
+        message: error.message || '注册失败'
+      };
     }
   }
 
-  // ==================== 华为登录（暂未实现） ====================
-  static async huaweiLogin(): Promise<LoginResult> {
+  static async getProfile(username?: string): Promise<UserProfile> {
+    const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
+
+    if (res.code !== 200 || !res.data) {
+      throw new Error(res.message || '获取用户信息失败');
+    }
+
+    const data = res.data;
+
     return {
-      success: false,
-      message: '华为账号登录暂未接入'
+      objectId: data.objectId || '',
+      username: data.username || username || '',
+      nickname: data.nickname || data.username || '',
+      avatar: data.avatar || '',
+      bio: data.bio || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      roles: data.roles || [],
+      permissions: data.permissions || []
     };
   }
 
-  // ==================== 获取用户资料 ====================
-  static async getProfile(username: string): Promise<UserProfile> {
-    try {
-      const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
-      if (res.code === 200 && res.data) {
-        const data = res.data;
-        // 用 nickname 作为 bio（或者你自己加个 bio 字段，文档里没有）
-        return {
-          username: data.username,
-          avatar: data.avatar || '',
-          bio: data.nickname || ''   // 暂时用昵称代替简介
-        };
-      }
-    } catch (e) {
-      console.error('获取当前用户失败', JSON.stringify(e));
-    }
-    // 失败时返回空
-    return { username: username, avatar: '', bio: '' };
-  }
-
-  // ==================== 更新用户资料（暂用 mock） ====================
-  static async updateProfile(username: string, avatar: string, bio: string): Promise<void> {
-    if (USE_MOCK_PROFILE) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      const profile: UserProfile = { username: username, avatar: avatar, bio: bio };
-      userProfiles.set(username, profile);
-    } else {
-      const body: Record<string, string> = {
-        'username': username,
-        'avatar': avatar,
-        'bio': bio
-      };
-      await HttpApi.post<ApiResponse<Object>>('/user/profile', body);
-    }
-  }
-
-  // ==================== 修改密码（暂用 mock） ====================
   static async changePassword(
-    username: string,
     oldPassword: string,
     newPassword: string
-  ): Promise<boolean> {
-    if (USE_MOCK_PROFILE) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      const idx: number = mockUsers.findIndex(u => u.username === username);
-      if (idx === -1 || mockUsers[idx].password !== oldPassword) {
-        return false;
-      }
-      mockUsers[idx].password = newPassword;
-      return true;
-    } else {
-      try {
-        const body: Record<string, string> = {
-          'username': username,
-          'oldPassword': oldPassword,
-          'newPassword': newPassword
+  ): Promise<ChangePasswordResult> {
+    try {
+      const body: ChangePasswordRequestBody = {
+        oldPassword: oldPassword,
+        newPassword: newPassword
+      };
+
+      const res = await HttpApi.put<ApiResponse<null>>('/auth/password', body);
+
+      if (res.code === 200) {
+        return {
+          success: true,
+          message: res.message || '密码修改成功'
         };
-        await HttpApi.post<ApiResponse<Object>>('/user/change-password', body);
-        return true;
-      } catch (e) {
-        console.error('修改密码失败', JSON.stringify(e));
-        return false;
       }
+
+      return {
+        success: false,
+        message: res.message || '密码修改失败'
+      };
+    } catch (e) {
+      const error = e as Error;
+      return {
+        success: false,
+        message: error.message || '密码修改失败'
+      };
     }
   }
 
-  // ==================== 获取用户信息（暂用 mock） ====================
-  static async getUserInfo(userId: string): Promise<UserInfo> {
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
-    const info: UserInfo = {
-      userId: userId,
-      username: `用户${userId.slice(-4)}`,
-      avatar: '',
-      favorites: []
-    };
-    return info;
+  static async huaweiLogin(): Promise<LoginResult> {
+    try {
+      const body: HuaweiLoginRequestBody = {
+        openId: 'harmony-huawei-openid-test-001',
+        unionId: 'harmony-huawei-unionid-test-001',
+        nickname: 'Huawei Test User',
+        avatar: '',
+        email: 'huawei-test@example.com'
+      };
+
+      const res = await HttpApi.post<ApiResponse<HuaweiLoginResponseData>>(
+        '/auth/huawei-login',
+        body,
+        { skipAuth: true }
+      );
+
+      if (res.code !== 200 || !res.data || !res.data.accessToken) {
+        return {
+          success: false,
+          message: res.message || '华为账号登录失败'
+        };
+      }
+
+      AppStorage.SetOrCreate('token', res.data.accessToken);
+      AppStorage.SetOrCreate('refreshToken', res.data.refreshToken || '');
+      AppStorage.SetOrCreate('isLogin', true);
+
+      if (res.data.user) {
+        AppStorage.SetOrCreate('userId', res.data.user.objectId || '');
+        AppStorage.SetOrCreate('username', res.data.user.username || '');
+
+        return {
+          success: true,
+          message: '华为账号登录成功',
+          username: res.data.user.username || '',
+          userId: res.data.user.objectId || '',
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken
+        };
+      }
+
+      const profile: UserProfile = await UserService.getProfile();
+
+      AppStorage.SetOrCreate('userId', profile.objectId || '');
+      AppStorage.SetOrCreate('username', profile.username || '');
+
+      return {
+        success: true,
+        message: '华为账号登录成功',
+        username: profile.username || '',
+        userId: profile.objectId || '',
+        accessToken: res.data.accessToken,
+        refreshToken: res.data.refreshToken
+      };
+    } catch (e) {
+      const error = e as Error;
+      return {
+        success: false,
+        message: error.message || '华为账号登录失败'
+      };
+    }
   }
 }
