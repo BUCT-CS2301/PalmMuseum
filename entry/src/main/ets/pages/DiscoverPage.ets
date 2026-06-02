@@ -1,3 +1,5 @@
+// entry/src/main/ets/pages/DiscoverPage.ets
+
 import promptAction from '@ohos.promptAction';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
 import picker from '@ohos.file.picker';
@@ -5,14 +7,11 @@ import common from '@ohos.app.ability.common';
 import abilityAccessCtrl, { Permissions } from '@ohos.abilityAccessCtrl';
 import router from '@ohos.router';
 import { cameraPicker, camera } from '@kit.CameraKit';
-import { ImageSearchService } from '../common/services/ImageSearchService';
-import type { SearchResult } from '../common/services/ImageSearchService';
-import { createDeviceImageDecoder } from '../common/services/ImageDecoder';
-import { createMockArtifactSource, createHttpArtifactSource } from '../common/services/ArtifactRepository';
+import { SearchService } from '../common/services/SearchService';
+import type { SearchResponse, SearchResultItem } from '../common/models/SearchModels';
 
 /**
- * 传给结果页的单条搜索结果（可 JSON 序列化）。
- * objectId = 文物 id，点击结果跳详情时用它。
+ * 传给结果页的单条搜索结果（可 JSON 序列化）
  */
 interface SearchResultDTO {
   objectId: string;
@@ -21,25 +20,7 @@ interface SearchResultDTO {
   type: string;
   material: string;
   imageUrl: string;
-  similarity: number; // 0~1 的余弦相似度
-}
-
-/**
- * 全局共享的搜索服务（建库一次后常驻内存，避免每次搜索重算全库）。
- * 注入真机解码器 + 数据源。
- */
-let sharedSearchService: ImageSearchService | null = null;
-
-function getSearchService(context: common.UIAbilityContext): ImageSearchService {
-  if (!sharedSearchService) {
-    sharedSearchService = new ImageSearchService({
-      decode: createDeviceImageDecoder(context),
-      // 已切真实后端：走 GET /api/v1/data/relics 拉文物建库（需先登录拿到 token）。
-      // 如需回离线示例图演示，把下面这行换成 createMockArtifactSource() 即可。
-      source: createHttpArtifactSource()
-    });
-  }
-  return sharedSearchService;
+  similarity: number;
 }
 
 @Entry
@@ -47,14 +28,11 @@ function getSearchService(context: common.UIAbilityContext): ImageSearchService 
 export struct DiscoverPage {
   // 搜索输入
   @State searchInput: string = '';
-
   // 语音识别文本
   @State voiceText: string = '';
-
   // 选中的图片
   @State selectedImage: string = '';
-
-  // 是否正在搜索（建库/提特征期间禁用按钮、给提示）
+  // 是否正在搜索（加载状态）
   @State isSearching: boolean = false;
 
   /**
@@ -66,17 +44,13 @@ export struct DiscoverPage {
       'ohos.permission.CAMERA',
       'ohos.permission.READ_MEDIA'
     ];
-
     const context = getContext(this) as common.UIAbilityContext;
-
     try {
       const result = await atManager.requestPermissionsFromUser(context, permissions);
       const isAllGranted = result.authResults.every((item: number) => item === 0);
-
       if (!isAllGranted) {
         promptAction.showToast({ message: '拍照或相册权限被拒绝' });
       }
-
       return isAllGranted;
     } catch (err) {
       promptAction.showToast({ message: '权限申请失败' });
@@ -92,17 +66,13 @@ export struct DiscoverPage {
     const permissions: Array<Permissions> = [
       'ohos.permission.MICROPHONE'
     ];
-
     const context = getContext(this) as common.UIAbilityContext;
-
     try {
       const result = await atManager.requestPermissionsFromUser(context, permissions);
       const isGranted = result.authResults.every((item: number) => item === 0);
-
       if (!isGranted) {
         promptAction.showToast({ message: '麦克风权限被拒绝，无法使用语音搜索' });
       }
-
       return isGranted;
     } catch (err) {
       promptAction.showToast({ message: '麦克风权限申请失败' });
@@ -111,13 +81,12 @@ export struct DiscoverPage {
   }
 
   /**
-   * 拍照搜索：调系统相机拍一张，拿到 uri 后走真实搜索流程（真机演示）
+   * 拍照搜索：调系统相机拍一张，拿到 uri 后走真实搜索流程
    */
   async openCamera(): Promise<void> {
     if (!await this.requestImagePermissions()) {
       return;
     }
-
     try {
       const context = getContext(this) as common.Context;
       const result = await cameraPicker.pick(
@@ -125,7 +94,6 @@ export struct DiscoverPage {
         [cameraPicker.PickerMediaType.PHOTO],
         { cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK }
       );
-      // resultCode 为 0 表示拍照成功
       if (result && result.resultCode === 0 && result.resultUri) {
         this.selectedImage = result.resultUri;
         await this.runImageSearch(result.resultUri);
@@ -144,14 +112,12 @@ export struct DiscoverPage {
     if (!await this.requestImagePermissions()) {
       return;
     }
-
     try {
       const photoPicker = new picker.PhotoViewPicker();
       const result = await photoPicker.select({
         MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE,
         maxSelectNumber: 1
       });
-
       if (result.photoUris.length > 0) {
         this.selectedImage = result.photoUris[0];
         await this.runImageSearch(result.photoUris[0]);
@@ -162,11 +128,10 @@ export struct DiscoverPage {
   }
 
   /**
-   * 真实以图搜图流程：
-   * 1) 确保向量库已建（首次进入建一次，常驻内存）
-   * 2) 对查询图提特征
-   * 3) 余弦检索 + 阈值过滤 + 降序 topK
-   * 4) 带结果跳结果页（即使为空也跳，由结果页展示「搜不到」）
+   * 以图搜图流程（调用后端 API）：
+   * 1. 调用 SearchService.searchByImage 上传图片
+   * 2. 根据相似度阈值过滤结果（0.85）
+   * 3. 转换为 DTO 并跳转结果页（即使为空也跳转）
    */
   async runImageSearch(uri: string): Promise<void> {
     if (!uri || this.isSearching) {
@@ -174,32 +139,31 @@ export struct DiscoverPage {
     }
     this.isSearching = true;
     try {
-      const context = getContext(this) as common.UIAbilityContext;
-      const service = getSearchService(context);
+      // 从 uri 中提取文件名（用于服务端表单字段）
+      const fileName = uri.split('/').pop() || 'image.jpg';
+      const TOP_K = 5;
+      const THRESHOLD = 0.85;
 
-      // 首次搜索前建库（对每件文物的 rawfile 图提特征）
-      if (service.librarySize === 0) {
-        promptAction.showToast({ message: '正在建立文物特征库…' });
-        await service.initArtifactVectors();
-      }
+      const response: SearchResponse = await SearchService.searchByImage(
+        uri,
+        fileName,
+        TOP_K,
+        THRESHOLD
+      );
 
-      // 查询图提特征 -> 检索
-      const queryVector = await service.extractImageFeature(uri);
-      const ranked: SearchResult[] = service.searchSimilarArtifacts(queryVector, 5, 0);
-      const HIT_THRESHOLD = 0.85;
-      const results: SearchResult[] =
-        (ranked.length > 0 && ranked[0].similarity >= HIT_THRESHOLD) ? ranked : [];
-      const dtoList: SearchResultDTO[] = results.map((r: SearchResult): SearchResultDTO => {
-        return {
-          objectId: r.artifact.id,
-          title: r.artifact.title,
-          period: r.artifact.period,
-          type: r.artifact.type,
-          material: r.artifact.material,
-          imageUrl: r.artifact.imageUrl,
-          similarity: r.similarity
-        };
-      });
+      // 后端已根据 threshold 过滤，但前端再确保一次
+      const results: SearchResultItem[] = (response.data?.results || [])
+        .filter(item => item.similarity >= THRESHOLD);
+
+      const dtoList: SearchResultDTO[] = results.map((item: SearchResultItem): SearchResultDTO => ({
+        objectId: item.objectId,
+        title: item.title,
+        period: item.period,
+        type: item.type,
+        material: item.material,
+        imageUrl: item.imageUrl,
+        similarity: item.similarity
+      }));
 
       router.pushUrl({
         url: 'pages/ImageSearchResultPage',
@@ -209,7 +173,8 @@ export struct DiscoverPage {
         }
       });
     } catch (err) {
-      promptAction.showToast({ message: '搜索失败：' + JSON.stringify(err) });
+      console.error('搜索失败', JSON.stringify(err));
+      promptAction.showToast({ message: '搜索失败：' + (err.message || '未知错误') });
     } finally {
       this.isSearching = false;
     }
@@ -240,17 +205,16 @@ export struct DiscoverPage {
   }
 
   /**
-   * 语音搜索模块
+   * 语音搜索模块（保持不变）
    */
   @Builder
   voiceSearchCard() {
     Column({ space: 16 }) {
       Row() {
-        Text('🎙️  语音搜索')          // 增加图标
+        Text('🎙️ 语音搜索')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor('#3A3A3A')
-
         Button('语音提示')
           .width(92)
           .height(32)
@@ -290,7 +254,7 @@ export struct DiscoverPage {
         .width('100%')
         .height(50)
         .fontSize(16)
-        .backgroundColor('#C76B5A')           // 柔化敦煌红
+        .backgroundColor('#C76B5A')
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(() => {
@@ -298,7 +262,6 @@ export struct DiscoverPage {
             promptAction.showToast({ message: '请输入搜索内容' });
             return;
           }
-
           this.voiceText = this.searchInput;
           MuseumVoiceService.handleVoiceSearch(this.searchInput);
         })
@@ -307,18 +270,15 @@ export struct DiscoverPage {
         .width('100%')
         .height(50)
         .fontSize(16)
-        .backgroundColor('#A68B6A')           // 浅大地色
+        .backgroundColor('#A68B6A')
         .fontColor(Color.White)
         .borderRadius(12)
         .onClick(async () => {
           const hasPermission = await this.requestMicrophonePermission();
-
           if (!hasPermission) {
             return;
           }
-
           promptAction.showToast({ message: '请说出文物关键词' });
-
           MuseumVoiceService.startVoiceSearch((text: string) => {
             this.voiceText = text;
             this.searchInput = text;
@@ -357,22 +317,22 @@ export struct DiscoverPage {
   }
 
   /**
-   * 以图搜图模块
+   * 以图搜图模块（已修正）
    */
   @Builder
   imageSearchCard() {
     Column({ space: 16 }) {
-      Text('📷  以图搜图')
+      Text('📷 以图搜图')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor('#3A3A3A')
         .alignSelf(ItemAlign.Start)
 
-      Button(this.isSearching ? '搜索中…' : '拍照搜索文物')
+      Button(this.isSearching ? '搜索中...' : '拍照搜索文物')
         .width('100%')
         .height(54)
         .fontSize(16)
-        .backgroundColor('#C76B5A')           // 与文字搜索同色，统一柔和红
+        .backgroundColor('#C76B5A')
         .fontColor(Color.White)
         .borderRadius(12)
         .enabled(!this.isSearching)
@@ -380,11 +340,11 @@ export struct DiscoverPage {
           await this.openCamera();
         })
 
-      Button(this.isSearching ? '搜索中…' : '从相册选择图片')
+      Button(this.isSearching ? '搜索中...' : '从相册选择图片')
         .width('100%')
         .height(54)
         .fontSize(16)
-        .backgroundColor('#A68B6A')           // 浅褐
+        .backgroundColor('#A68B6A')
         .fontColor(Color.White)
         .borderRadius(12)
         .enabled(!this.isSearching)

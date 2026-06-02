@@ -1,8 +1,10 @@
+// entry/src/main/ets/pages/ImageSearchResultPage.ets
+
 import router from '@ohos.router';
+import { BASE_URL } from '../common/Constants';
 
 /**
- * 搜索结果单条（与 DiscoverPage 传过来的结构一致）。
- * similarity 为 0~1 的余弦相似度；objectId 用于跳详情页。
+ * 搜索结果单条（与 DiscoverPage 传过来的结构一致）
  */
 interface SearchResultDTO {
   objectId: string;
@@ -17,38 +19,69 @@ interface SearchResultDTO {
 @Entry
 @Component
 export struct ImageSearchResultPage {
-  private image: string = '';
+  private queryImageUri: string = '';
   @State results: SearchResultDTO[] = [];
 
   aboutToAppear() {
-    const params = router.getParams() as Record<string, string>;
-    if (!params) {
-      return;
-    }
-    this.image = params.image ?? '';
+    const params = router.getParams() as Record<string, Object>;
+    if (!params) return;
 
-    if (params.results) {
-      const parsed = JSON.parse(params.results) as SearchResultDTO[];
-      // 防御性再排一次序：按相似度降序
-      parsed.sort((a: SearchResultDTO, b: SearchResultDTO): number => b.similarity - a.similarity);
-      this.results = parsed;
+    // 获取查询图片 URI（用于预览）
+    this.queryImageUri = (params.image as string) ?? '';
+
+    // 解析搜索结果
+    const resultsStr = params.results as string;
+    if (resultsStr) {
+      try {
+        const parsed = JSON.parse(resultsStr) as SearchResultDTO[];
+        if (Array.isArray(parsed)) {
+          // 按相似度降序排序
+          parsed.sort((a, b) => b.similarity - a.similarity);
+          this.results = parsed;
+        } else {
+          this.results = [];
+        }
+      } catch (e) {
+        console.error('解析搜索结果失败', e);
+        this.results = [];
+      }
+    } else {
+      this.results = [];
     }
   }
 
-  /** rawfile:// 走 $rawfile，其余（http 网络图/本地 uri）直接用字符串 */
-  private toImageSrc(imageUrl: string): string | Resource {
+  /**
+   * 将后端返回的图片 URL 转换为可加载的字符串
+   * - 如果是完整 http/https 链接，直接使用
+   * - 如果是相对路径（如 /static/xxx），拼接 BASE_URL
+   * - 其他情况（如 rawfile://）保留原逻辑（实际很少用到）
+   */
+  private toImageSrc(imageUrl: string): string {
+    if (!imageUrl) return '';
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
     if (imageUrl.startsWith('rawfile://')) {
-      return $rawfile(imageUrl.substring('rawfile://'.length));
+      // 理论上后端不会返回此格式，保留兼容
+      return imageUrl;
     }
-    return imageUrl;
+    // 相对路径：拼接 BASE_URL
+    if (imageUrl.startsWith('/')) {
+      return `${BASE_URL}${imageUrl}`;
+    }
+    return `${BASE_URL}/${imageUrl}`;
   }
 
-  /** 把 0~1 的相似度显示成百分比整数 */
+  /**
+   * 相似度转百分比字符串
+   */
   private toPercent(similarity: number): string {
     return Math.round(similarity * 100) + '%';
   }
 
-  /** 点击结果项 -> 跳详情页，传 objectId */
+  /**
+   * 跳转详情页
+   */
   private gotoDetail(objectId: string) {
     router.pushUrl({
       url: 'pages/ArtifactDetailPage',
@@ -61,11 +94,30 @@ export struct ImageSearchResultPage {
       Text('以图搜图结果')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#3A3A3A')               // 主文字色
+        .fontColor('#3A3A3A')
         .margin({ top: 40, bottom: 20 })
 
+      // 查询图片预览（可选，提升用户体验）
+      if (this.queryImageUri) {
+        Row() {
+          Text('查询图片：')
+            .fontSize(14)
+            .fontColor('#8B7355')
+          Image(this.queryImageUri)
+            .width(80)
+            .height(80)
+            .borderRadius(8)
+            .objectFit(ImageFit.Cover)
+            .margin({ left: 12 })
+        }
+        .width('92%')
+        .padding({ left: 16, top: 8, bottom: 8 })
+        .backgroundColor('#FFFFFF')
+        .borderRadius(12)
+        .margin({ bottom: 16 })
+      }
+
       if (this.results.length === 0) {
-        // 空态：完全不沾边 / 低于阈值 -> 搜不到
         this.emptyState()
       } else {
         List() {
@@ -89,17 +141,17 @@ export struct ImageSearchResultPage {
 
                   Text('年代：' + item.period)
                     .fontSize(15)
-                    .fontColor('#8B7355')      // 辅助文字色
+                    .fontColor('#8B7355')
                     .margin({ bottom: 4 })
 
-                  Text('类型：' + item.type + '  ·  材质：' + item.material)
+                  Text('类型：' + item.type + ' · 材质：' + item.material)
                     .fontSize(14)
                     .fontColor('#8B7355')
                     .margin({ bottom: 8 })
 
                   Text('相似度：' + this.toPercent(item.similarity))
                     .fontSize(18)
-                    .fontColor('#C05040')      // 敦煌红强调色
+                    .fontColor('#C05040')
                     .fontWeight(FontWeight.Bold)
                 }
                 .alignItems(HorizontalAlign.Start)
@@ -110,7 +162,7 @@ export struct ImageSearchResultPage {
               .padding(16)
               .backgroundColor('#FFFFFF')
               .borderRadius(12)
-              .shadow({ radius: 6, color: '#18000000', offsetY: 2 })  // 与主页卡片同款阴影
+              .shadow({ radius: 6, color: '#18000000', offsetY: 2 })
             }
             .margin({ bottom: 16 })
             .onClick(() => {
@@ -126,11 +178,10 @@ export struct ImageSearchResultPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F0E8')               // 页面背景米白
+    .backgroundColor('#F5F0E8')
     .alignItems(HorizontalAlign.Center)
   }
 
-  /** 搜不到时的空态 */
   @Builder
   emptyState() {
     Column({ space: 16 }) {
