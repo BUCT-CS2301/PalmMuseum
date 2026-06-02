@@ -3,19 +3,23 @@ import http from '@ohos.net.http';
 
 const BASE_URL = 'http://60.205.14.101:8080/api/v1';
 
-function buildQueryString(params: Record<string, string>): string {
+export interface HttpQueryParam {
+  key: string;
+  value: string;
+}
+
+function buildQueryString(params: HttpQueryParam[]): string {
   let query = '';
   let first = true;
-  const keys: string[] = Object.keys(params);
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
+  for (let i = 0; i < params.length; i++) {
+    const item = params[i];
     if (first) {
       query += '?';
       first = false;
     } else {
       query += '&';
     }
-    query += `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`;
+    query += `${encodeURIComponent(item.key)}=${encodeURIComponent(item.value)}`;
   }
   return query;
 }
@@ -26,7 +30,7 @@ export class HttpApi {
     return (AppStorage.Get('token') as string) || '';
   }
 
-  static async get<T>(url: string, params?: Record<string, string>): Promise<T> {
+  static async get<T>(url: string, params?: HttpQueryParam[]): Promise<T> {
     let fullUrl = `${BASE_URL}${url}`;
     if (params) {
       fullUrl += buildQueryString(params);

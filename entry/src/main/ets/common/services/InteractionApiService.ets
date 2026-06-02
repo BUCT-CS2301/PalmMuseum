@@ -1,4 +1,4 @@
-import { HttpApi } from '../network/HttpApi';
+import { HttpApi, HttpQueryParam } from '../network/HttpApi';
 import {
   CommentItem,
   FavoriteGroupSummary,
@@ -114,10 +114,64 @@ interface CommentPostResultDto {
   message?: string;
 }
 
+interface ItemCollectionDto<T> {
+  items?: T[];
+  records?: T[];
+}
+
+interface EmptyBody {
+}
+
+interface FavoriteGroupCreateBody {
+  groupName: string;
+}
+
+interface FavoriteCreateBody {
+  artifactId: string;
+  groupName: string;
+}
+
+interface FavoriteMoveBody {
+  groupName: string;
+}
+
+interface CommentCreateBody {
+  content: string;
+  parentId: string | null;
+}
+
+interface HistoryCreateBody {
+  artifactId: string;
+}
+
+interface PrivacySaveBody {
+  favoritesVisible: boolean;
+  likesVisible: boolean;
+  commentsVisible: boolean;
+  uploadsVisible: boolean;
+}
+
+interface PageRequestQuery {
+  page: string;
+  size: string;
+}
+
 const DEFAULT_GROUP_LABEL = '默认收藏夹';
 const DEFAULT_GROUP_SERVER_VALUE = 'default';
 
 export class InteractionApiService {
+  private static buildPageQuery(): HttpQueryParam[] {
+    const pageParam: HttpQueryParam = {
+      key: 'page',
+      value: '1'
+    };
+    const sizeParam: HttpQueryParam = {
+      key: 'size',
+      value: '100'
+    };
+    return [pageParam, sizeParam];
+  }
+
   private static encodePathSegment(value: string): string {
     return encodeURIComponent(value);
   }
@@ -145,12 +199,12 @@ export class InteractionApiService {
     if (Array.isArray(arrayData)) {
       return arrayData;
     }
-    const recordData = data as Record<string, Object>;
-    const items = recordData['items'] as Array<T>;
+    const recordData = data as ItemCollectionDto<T>;
+    const items = recordData.items as Array<T>;
     if (Array.isArray(items)) {
       return items;
     }
-    const records = recordData['records'] as Array<T>;
+    const records = recordData.records as Array<T>;
     if (Array.isArray(records)) {
       return records;
     }
@@ -167,7 +221,7 @@ export class InteractionApiService {
 
   private static mergeFavoriteRecord(item: FavoriteRecordDto, snapshot?: FavoriteItem): FavoriteItem {
     const artifactId = item.artifactId || item.objectId || (snapshot ? snapshot.artifactId : '');
-    return {
+    const result: FavoriteItem = {
       artifactId: artifactId,
       title: item.title || (snapshot ? snapshot.title : artifactId),
       imageUrl: item.imageUrl || (snapshot ? snapshot.imageUrl : ''),
@@ -176,11 +230,12 @@ export class InteractionApiService {
       groupName: InteractionApiService.toDisplayGroupName(item.groupName || (snapshot ? snapshot.groupName : DEFAULT_GROUP_SERVER_VALUE)),
       createdAt: item.createTime || item.createdAt || (snapshot ? snapshot.createdAt : new Date().toISOString())
     };
+    return result;
   }
 
   private static mergeLikeRecord(item: LikeRecordDto, snapshot?: LikeItem): LikeItem {
     const artifactId = item.artifactId || item.objectId || (snapshot ? snapshot.artifactId : '');
-    return {
+    const result: LikeItem = {
       artifactId: artifactId,
       title: item.title || (snapshot ? snapshot.title : artifactId),
       imageUrl: item.imageUrl || (snapshot ? snapshot.imageUrl : ''),
@@ -188,11 +243,12 @@ export class InteractionApiService {
       museum: item.museum || (snapshot ? snapshot.museum : ''),
       likedAt: item.likedAt || item.createTime || (snapshot ? snapshot.likedAt : new Date().toISOString())
     };
+    return result;
   }
 
   private static mergeHistoryRecord(item: HistoryRecordDto, snapshot?: HistoryItem): HistoryItem {
     const artifactId = item.artifactId || item.objectId || (snapshot ? snapshot.artifactId : '');
-    return {
+    const result: HistoryItem = {
       artifactId: artifactId,
       title: item.title || (snapshot ? snapshot.title : artifactId),
       imageUrl: item.imageUrl || (snapshot ? snapshot.imageUrl : ''),
@@ -200,6 +256,7 @@ export class InteractionApiService {
       museum: item.museum || (snapshot ? snapshot.museum : ''),
       viewedAt: item.viewedAt || item.browseTime || (snapshot ? snapshot.viewedAt : new Date().toISOString())
     };
+    return result;
   }
 
   private static flattenComments(items: CommentDto[], artifactId: string): CommentItem[] {
@@ -207,7 +264,7 @@ export class InteractionApiService {
     items.forEach((item: CommentDto) => {
       const rootId = item.objectId || '';
       const rootUserName = item.userName || '匿名用户';
-      result.push({
+      const rootComment: CommentItem = {
         id: rootId,
         artifactId: item.artifactId || artifactId,
         artifactTitle: item.artifactTitle || '',
@@ -217,11 +274,12 @@ export class InteractionApiService {
         status: InteractionApiService.mapReviewStatus(item.status),
         likeCount: item.likeCount || 0,
         likedByCurrentUser: item.likedByCurrentUser === true
-      });
+      };
+      result.push(rootComment);
 
       const replies = item.replies || [];
       replies.forEach((reply: CommentDto) => {
-        result.push({
+        const replyComment: CommentItem = {
           id: reply.objectId || '',
           artifactId: reply.artifactId || artifactId,
           artifactTitle: reply.artifactTitle || '',
@@ -233,7 +291,8 @@ export class InteractionApiService {
           replyTo: reply.replyTo || rootUserName,
           likeCount: reply.likeCount || 0,
           likedByCurrentUser: reply.likedByCurrentUser === true
-        });
+        };
+        result.push(replyComment);
       });
     });
     return result;
@@ -254,9 +313,10 @@ export class InteractionApiService {
   }
 
   static async addFavoriteGroup(username: string, groupName: string): Promise<string[]> {
-    const res = await HttpApi.post<ApiResponse<FavoriteGroupDto>>(`/users/${username}/favorite-groups`, {
+    const body: FavoriteGroupCreateBody = {
       groupName: InteractionApiService.toServerGroupName(groupName)
-    });
+    };
+    const res = await HttpApi.post<ApiResponse<FavoriteGroupDto>>(`/users/${username}/favorite-groups`, body);
     if (res.code !== 200) {
       throw new Error(res.message || '新建收藏夹失败');
     }
@@ -280,19 +340,18 @@ export class InteractionApiService {
     }
     return (res.data as FavoriteGroupSummaryDto[]).map((item: FavoriteGroupSummaryDto): FavoriteGroupSummary => {
       const displayName = InteractionApiService.toDisplayGroupName(item.groupName);
-      return {
+      const summary: FavoriteGroupSummary = {
         name: displayName,
         count: item.count || 0,
         isDefault: displayName === DEFAULT_GROUP_LABEL
       };
+      return summary;
     });
   }
 
   static async getFavorites(username: string, snapshots: FavoriteItem[] = []): Promise<FavoriteItem[]> {
-    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/favorites`, {
-      page: '1',
-      size: '100'
-    });
+    const query = InteractionApiService.buildPageQuery();
+    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/favorites`, query);
     if (res.code !== 200) {
       throw new Error(res.message || '获取收藏列表失败');
     }
@@ -305,10 +364,11 @@ export class InteractionApiService {
   }
 
   static async addFavorite(username: string, artifactId: string, groupName: string): Promise<ToggleFavoriteDto> {
-    const res = await HttpApi.post<ApiResponse<ToggleFavoriteDto>>(`/users/${username}/favorites`, {
+    const body: FavoriteCreateBody = {
       artifactId: artifactId,
       groupName: InteractionApiService.toServerGroupName(groupName)
-    });
+    };
+    const res = await HttpApi.post<ApiResponse<ToggleFavoriteDto>>(`/users/${username}/favorites`, body);
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '收藏失败');
     }
@@ -316,9 +376,10 @@ export class InteractionApiService {
   }
 
   static async moveFavorite(username: string, artifactId: string, groupName: string): Promise<ToggleFavoriteDto> {
-    const res = await HttpApi.put<ApiResponse<ToggleFavoriteDto>>(`/users/${username}/favorites/${artifactId}/group`, {
+    const body: FavoriteMoveBody = {
       groupName: InteractionApiService.toServerGroupName(groupName)
-    });
+    };
+    const res = await HttpApi.put<ApiResponse<ToggleFavoriteDto>>(`/users/${username}/favorites/${artifactId}/group`, body);
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '修改收藏分组失败');
     }
@@ -347,10 +408,11 @@ export class InteractionApiService {
       const likes = await InteractionApiService.getLikes(username, snapshots);
       active = likes.some((item: LikeItem) => item.artifactId === artifactId);
     }
-    return {
+    const result: InteractionSummary = {
       active: active,
       count: summary.likeCount || 0
     };
+    return result;
   }
 
   static async getArtifactFavoriteSummary(artifactId: string, username: string, snapshots: FavoriteItem[] = []): Promise<InteractionSummary> {
@@ -360,21 +422,24 @@ export class InteractionApiService {
       const favorites = await InteractionApiService.getFavorites(username, snapshots);
       active = favorites.some((item: FavoriteItem) => item.artifactId === artifactId);
     }
-    return {
+    const result: InteractionSummary = {
       active: active,
       count: summary.favoriteCount || 0
     };
+    return result;
   }
 
   static async likeArtifact(artifactId: string): Promise<InteractionSummary> {
-    const res = await HttpApi.post<ApiResponse<ToggleLikeDto>>(`/artifacts/${artifactId}/likes`, {});
+    const body: EmptyBody = {};
+    const res = await HttpApi.post<ApiResponse<ToggleLikeDto>>(`/artifacts/${artifactId}/likes`, body);
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '点赞失败');
     }
-    return {
+    const result: InteractionSummary = {
       active: res.data.isLiked === true,
       count: res.data.likeCount || 0
     };
+    return result;
   }
 
   static async unlikeArtifact(artifactId: string): Promise<InteractionSummary> {
@@ -382,17 +447,16 @@ export class InteractionApiService {
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '取消点赞失败');
     }
-    return {
+    const result: InteractionSummary = {
       active: res.data.isLiked === true,
       count: res.data.likeCount || 0
     };
+    return result;
   }
 
   static async getLikes(username: string, snapshots: LikeItem[] = []): Promise<LikeItem[]> {
-    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/likes`, {
-      page: '1',
-      size: '100'
-    });
+    const query = InteractionApiService.buildPageQuery();
+    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/likes`, query);
     if (res.code !== 200) {
       throw new Error(res.message || '获取点赞列表失败');
     }
@@ -405,10 +469,8 @@ export class InteractionApiService {
   }
 
   static async getCommentsForArtifact(artifactId: string): Promise<CommentItem[]> {
-    const res = await HttpApi.get<ApiResponse<Object>>(`/artifacts/${artifactId}/comments`, {
-      page: '1',
-      size: '100'
-    });
+    const query = InteractionApiService.buildPageQuery();
+    const res = await HttpApi.get<ApiResponse<Object>>(`/artifacts/${artifactId}/comments`, query);
     if (res.code !== 200) {
       throw new Error(res.message || '获取评论列表失败');
     }
@@ -417,7 +479,7 @@ export class InteractionApiService {
   }
 
   static async addComment(artifactId: string, content: string, parentId: string = ''): Promise<CommentPostResultDto> {
-    const body: Record<string, string | null> = {
+    const body: CommentCreateBody = {
       content: content,
       parentId: parentId ? parentId : null
     };
@@ -429,27 +491,27 @@ export class InteractionApiService {
   }
 
   static async likeComment(commentId: string): Promise<InteractionSummary> {
-    const res = await HttpApi.post<ApiResponse<ToggleLikeDto>>(`/comments/${commentId}/likes`, {});
+    const body: EmptyBody = {};
+    const res = await HttpApi.post<ApiResponse<ToggleLikeDto>>(`/comments/${commentId}/likes`, body);
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '评论点赞失败');
     }
-    return {
+    const result: InteractionSummary = {
       active: res.data.isLiked === true,
       count: res.data.likeCount || 0
     };
+    return result;
   }
 
   static async getUserComments(username: string): Promise<CommentItem[]> {
-    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/comments`, {
-      page: '1',
-      size: '100'
-    });
+    const query = InteractionApiService.buildPageQuery();
+    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/comments`, query);
     if (res.code !== 200) {
       throw new Error(res.message || '获取我的评论失败');
     }
     const items = InteractionApiService.pickItems<CommentDto>(res.data);
     return items.map((item: CommentDto): CommentItem => {
-      return {
+      const comment: CommentItem = {
         id: item.objectId || '',
         artifactId: item.artifactId || '',
         artifactTitle: item.artifactTitle || '',
@@ -462,23 +524,23 @@ export class InteractionApiService {
         likeCount: item.likeCount || 0,
         likedByCurrentUser: item.likedByCurrentUser === true
       };
+      return comment;
     });
   }
 
   static async recordHistory(username: string, artifactId: string): Promise<void> {
-    const res = await HttpApi.post<ApiResponse<Object>>(`/users/${username}/history`, {
+    const body: HistoryCreateBody = {
       artifactId: artifactId
-    });
+    };
+    const res = await HttpApi.post<ApiResponse<Object>>(`/users/${username}/history`, body);
     if (res.code !== 200) {
       throw new Error(res.message || '记录浏览历史失败');
     }
   }
 
   static async getHistory(username: string, snapshots: HistoryItem[] = []): Promise<HistoryItem[]> {
-    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/history`, {
-      page: '1',
-      size: '100'
-    });
+    const query = InteractionApiService.buildPageQuery();
+    const res = await HttpApi.get<ApiResponse<Object>>(`/users/${username}/history`, query);
     if (res.code !== 200) {
       throw new Error(res.message || '获取浏览记录失败');
     }
@@ -495,29 +557,32 @@ export class InteractionApiService {
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '获取隐私设置失败');
     }
-    return {
+    const result: PrivacySettings = {
       showFavorites: res.data.favoritesVisible !== false,
       showLikes: res.data.likesVisible !== false,
       showComments: res.data.commentsVisible !== false,
       showPhotos: res.data.uploadsVisible !== false
     };
+    return result;
   }
 
   static async savePrivacy(username: string, privacy: PrivacySettings): Promise<PrivacySettings> {
-    const res = await HttpApi.put<ApiResponse<PrivacyDto>>(`/users/${username}/privacy`, {
+    const body: PrivacySaveBody = {
       favoritesVisible: privacy.showFavorites,
       likesVisible: privacy.showLikes,
       commentsVisible: privacy.showComments,
       uploadsVisible: privacy.showPhotos
-    });
+    };
+    const res = await HttpApi.put<ApiResponse<PrivacyDto>>(`/users/${username}/privacy`, body);
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '保存隐私设置失败');
     }
-    return {
+    const result: PrivacySettings = {
       showFavorites: res.data.favoritesVisible !== false,
       showLikes: res.data.likesVisible !== false,
       showComments: res.data.commentsVisible !== false,
       showPhotos: res.data.uploadsVisible !== false
     };
+    return result;
   }
 }
