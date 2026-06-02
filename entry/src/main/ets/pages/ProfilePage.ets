@@ -7,187 +7,423 @@ import { UserService, UserProfile } from '../common/services/UserService';
 @Component
 export struct ProfilePage {
   @StorageLink('isLogin') isLogin: boolean = false;
-  @StorageLink('username') username: string = '';
-  @StorageLink('interactionVersion') @Watch('onInteractionVersionChange') interactionVersion: number = 0;
-  @State profile: UserProfile = { username: '', avatar: '', bio: '' };
+  @StorageLink('username') storageUsername: string = '';
+  @StorageLink('nickname') storageNickname: string = '';
+  @StorageLink('avatar') storageAvatar: string = '';
+  @StorageLink('bio') storageBio: string = '';
+
+  @State username: string = '';
+  @State nickname: string = '';
+  @State avatar: string = '';
+  @State bio: string = '';
+  @State isLoading: boolean = false;
+  @State targetUsername: string = '';
 
   aboutToAppear() {
     this.loadProfile();
   }
 
-  private async loadProfile() {
-    if (!this.isLogin || !this.username) {
-      this.profile = { username: '', avatar: '', bio: '' };
-      return;
-    }
-    this.profile = await UserService.getProfile(this.username);
-    console.info('===== 获取到的用户资料：', JSON.stringify(this.profile));
-  }
-
-  private onInteractionVersionChange(): void {
-    this.loadProfile();
-  }
-
   build() {
     Column() {
-      if (this.isLogin) {
-        // 头像与用户名区域
-        Column() {
-          if (this.profile.avatar) {
-            Image(this.profile.avatar)
-              .width(80)
-              .height(80)
-              .borderRadius(40)
-              .objectFit(ImageFit.Cover)
-              .margin({ top: 28 })
-          } else {
-            // 默认头像：圆形背景 + 用户名首字
-            Stack() {
-              Circle({ width: 80, height: 80 })
-                .fill('#E0D5C6')
-              Text(this.username.charAt(0).toUpperCase())
-                .fontSize(32)
-                .fontColor('#FFFFFF')
-            }
-            .width(80)
-            .height(80)
-            .margin({ top: 28 })
-          }
-
-          Text(this.username)
-            .fontSize(20)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#3A3A3A')
-            .margin({ top: 10 })
-
-          if (this.profile.bio) {
-            Text(this.profile.bio)
-              .fontSize(14)
-              .fontColor('#8B7355')
-              .margin({ top: 4 })
-              .maxLines(2)
-          } else {
-            Text('个人主页')
-              .fontSize(14)
-              .fontColor('#8B7355')
-              .margin({ top: 4 })
-          }
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Center)
-
-        // 菜单卡片
-        Column() {
-          this.MenuItem('收藏夹', '📦', 'pages/MyFavoritesPage')
-          this.MenuItem('浏览记录', '⏰', 'pages/MyHistoryPage')
-          this.MenuItem('我的点赞', '❤️', 'pages/MyLikesPage')
-          this.MenuItem('我的评论', '💬', 'pages/MyCommentsPage')
-          this.MenuItem('上传的照片', '📷', 'pages/MyUploadsPage')
-          this.MenuItem('设置', '⚙️', 'pages/SettingsPage')
-          Divider()
-            .strokeWidth(0.5)
-            .color('#E0D5C6')
-          this.MenuItem('退出登录', '🚪', '')
-        }
-        .width('100%')
-        .backgroundColor('#F2EDE8')
-        .borderRadius(12)
-        .padding({ top: 8, bottom: 8, left: 20, right: 20 })
-        .margin({ left: 12, right: 12, top: 18 })
+      if (!this.isLogin) {
+        this.NotLoginView()
       } else {
-        // 未登录状态
-        Column({ space: 20 }) {
-          Circle({ width: 80, height: 80 })
-            .fill('#E0D5C6')
-            .margin({ top: 72 })
-
-          Text('未登录')
-            .fontSize(18)
-            .fontColor('#3A3A3A')
-
-          Button('去登录')
-            .width(200)
-            .height(44)
-            .fontSize(16)
-            .fontColor(Color.White)
-            .backgroundColor('#C05040')
-            .borderRadius(8)
-            .onClick(() => {
-              router.pushUrl({ url: 'pages/LoginPage' });
-            })
-
-          Button('注册账号')
-            .width(200)
-            .height(44)
-            .fontSize(14)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#C05040')
-            .onClick(() => {
-              router.pushUrl({ url: 'pages/RegisterPage' });
-            })
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Center)
+        this.LoggedInView()
       }
     }
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F0E8')
-    .onAppear(() => {
-      this.loadProfile();
-    })
-    .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, currentRatio: number) => {
-      if (isVisible && currentRatio > 0) {
-        this.loadProfile();
-      }
-    })
   }
 
   @Builder
-  MenuItem(title: string, icon: string, route: string) {
-    Row() {
-      Text(icon)
-        .fontSize(24)
-        .margin({ right: 12 })
-
-      Text(title)
-        .fontSize(16)
-        .fontColor('#3A3A3A')
-
+  NotLoginView() {
+    Column() {
       Blank()
 
-      Text('>')
+      Stack() {
+        Circle({ width: 88, height: 88 })
+          .fill('#E0D5C6')
+
+        Text('未')
+          .fontSize(30)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+      }
+      .width(88)
+      .height(88)
+      .margin({ bottom: 16 })
+
+      Text('还没有登录')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
+        .margin({ bottom: 8 })
+
+      Text('登录后可以查看收藏、点赞和上传记录')
+        .fontSize(14)
+        .fontColor('#8B7355')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: 26 })
+
+      Button('去登录')
+        .width(210)
+        .height(46)
         .fontSize(16)
+        .fontColor(Color.White)
+        .backgroundColor('#C05040')
+        .borderRadius(23)
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/LoginPage' });
+        })
+
+      Blank()
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 24, right: 24 })
+  }
+
+  @Builder
+  LoggedInView() {
+    Scroll() {
+      Column() {
+        this.ProfileHeader()
+
+        this.UserSearchBar()
+
+        Column() {
+          this.MenuRow('📦', '收藏夹', 'favorites')
+          this.MenuRow('⏰', '浏览记录', 'history')
+          this.MenuRow('❤️', '我的点赞', 'likes')
+          this.MenuRow('💬', '我的评论', 'comments')
+          this.MenuRow('📷', '上传的照片', 'uploads')
+          this.MenuRow('⚙️', '设置', 'settings')
+
+          Divider()
+            .strokeWidth(0.5)
+            .color('#E0D5C6')
+            .margin({ left: 14, right: 14 })
+
+          this.MenuRow('🚪', '退出登录', 'logout')
+        }
+        .width('100%')
+        .backgroundColor('#F8F3EF')
+        .borderRadius(16)
+        .margin({ top: 12, left: 12, right: 12, bottom: 24 })
+        .padding({ top: 4, bottom: 4 })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  ProfileHeader() {
+    Column() {
+      if (this.getAvatarUrl().length > 0) {
+        Image(this.getAvatarUrl())
+          .width(86)
+          .height(86)
+          .borderRadius(43)
+          .objectFit(ImageFit.Cover)
+          .backgroundColor('#E0D5C6')
+          .alt($r('app.media.startIcon'))
+          .margin({ top: 22, bottom: 10 })
+      } else {
+        Stack() {
+          Circle({ width: 86, height: 86 })
+            .fill('#E0D5C6')
+
+          Text(this.getInitial())
+            .fontSize(31)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+        }
+        .width(86)
+        .height(86)
+        .margin({ top: 22, bottom: 10 })
+      }
+
+      Text(this.getDisplayName())
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#3A3A3A')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ bottom: 3 })
+
+      Text(`@${this.username || this.storageUsername}`)
+        .fontSize(12)
+        .fontColor('#8B7355')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ bottom: 8 })
+
+      Text(this.getBioText())
+        .fontSize(13)
+        .fontColor(this.hasBio() ? '#6F5B45' : '#A8937A')
+        .textAlign(TextAlign.Center)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('78%')
+        .margin({ bottom: 12 })
+
+      Button('编辑资料')
+        .width(112)
+        .height(34)
+        .fontSize(14)
+        .fontColor('#C05040')
+        .backgroundColor('#FFF8F2')
+        .borderRadius(17)
+        .border({ width: 1, color: '#C05040' })
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/EditProfilePage' });
+        })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+    .padding({ bottom: 10 })
+  }
+
+  @Builder
+  UserSearchBar() {
+    Column() {
+      Row() {
+        Text('查看他人主页')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#3A3A3A')
+          .layoutWeight(1)
+
+        Text('›')
+          .fontSize(18)
+          .fontColor('#8B7355')
+      }
+      .width('100%')
+      .margin({ bottom: 10 })
+
+      Row({ space: 8 }) {
+        TextInput({ placeholder: '输入用户名', text: this.targetUsername })
+          .layoutWeight(1)
+          .height(40)
+          .fontSize(14)
+          .fontColor('#3A3A3A')
+          .placeholderColor('#B8AFA6')
+          .backgroundColor('#FFFFFF')
+          .borderRadius(20)
+          .border({ width: 1, color: '#E0D5C6' })
+          .padding({ left: 14, right: 12 })
+          .onChange((value: string) => {
+            this.targetUsername = value;
+          })
+
+        Button('查看')
+          .width(68)
+          .height(40)
+          .fontSize(14)
+          .fontColor(Color.White)
+          .backgroundColor('#C05040')
+          .borderRadius(20)
+          .onClick(() => {
+            this.goToOtherProfile();
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+    .backgroundColor('#F8F3EF')
+    .borderRadius(16)
+    .margin({ left: 12, right: 12, top: 6 })
+  }
+
+  @Builder
+  MenuRow(icon: string, title: string, action: string) {
+    Row() {
+      Text(icon)
+        .fontSize(23)
+        .width(38)
+        .textAlign(TextAlign.Center)
+
+      Text(title)
+        .fontSize(17)
+        .fontColor('#3A3A3A')
+        .layoutWeight(1)
+        .margin({ left: 10 })
+
+      Text('>')
+        .fontSize(18)
         .fontColor('#8B7355')
     }
     .width('100%')
-    .height(50)
+    .height(56)
+    .padding({ left: 16, right: 18 })
     .onClick(() => {
-      if (title === '退出登录') {
-        this.doLogout();
-        return;
-      }
-
-      if (!this.isLogin) {
-        promptAction.showToast({ message: '请先登录' });
-        router.pushUrl({ url: 'pages/LoginPage' });
-        return;
-      }
-
-      if (route) {
-        router.pushUrl({ url: route });
-      }
+      this.handleMenuClick(action);
     })
   }
 
-  doLogout() {
+  private async loadProfile(): Promise<void> {
+    if (!this.isLogin) {
+      return;
+    }
+
+    this.isLoading = true;
+
+    try {
+      const profile: UserProfile = await UserService.getProfile();
+
+      this.username = profile.username || this.storageUsername || '';
+      this.nickname = profile.nickname || profile.username || '';
+      this.avatar = profile.avatar || '';
+      this.bio = profile.bio || '';
+
+      AppStorage.SetOrCreate('username', this.username);
+      AppStorage.SetOrCreate('nickname', this.nickname);
+      AppStorage.SetOrCreate('avatar', this.avatar);
+      AppStorage.SetOrCreate('bio', this.bio);
+
+      console.info(`[ProfilePage] 加载用户信息成功 ${JSON.stringify(profile)}`);
+    } catch (error) {
+      console.error(`[ProfilePage] 加载用户信息失败 ${JSON.stringify(error)}`);
+
+      this.username = this.storageUsername || '';
+      this.nickname = this.storageNickname || this.storageUsername || '';
+      this.avatar = this.storageAvatar || '';
+      this.bio = this.storageBio || '';
+
+      promptAction.showToast({ message: '用户信息加载失败' });
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  private getDisplayName(): string {
+    if (this.nickname && this.nickname.trim().length > 0) {
+      return this.nickname;
+    }
+
+    if (this.storageNickname && this.storageNickname.trim().length > 0) {
+      return this.storageNickname;
+    }
+
+    if (this.username && this.username.trim().length > 0) {
+      return this.username;
+    }
+
+    if (this.storageUsername && this.storageUsername.trim().length > 0) {
+      return this.storageUsername;
+    }
+
+    return '掌上博物馆用户';
+  }
+
+  private getBioText(): string {
+    if (this.bio && this.bio.trim().length > 0) {
+      return this.bio;
+    }
+
+    if (this.storageBio && this.storageBio.trim().length > 0) {
+      return this.storageBio;
+    }
+
+    return '这个人还没有写简介';
+  }
+
+  private hasBio(): boolean {
+    if (this.bio && this.bio.trim().length > 0) {
+      return true;
+    }
+
+    if (this.storageBio && this.storageBio.trim().length > 0) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private getAvatarUrl(): string {
+    if (this.avatar && this.avatar.trim().length > 0) {
+      return this.avatar;
+    }
+
+    if (this.storageAvatar && this.storageAvatar.trim().length > 0) {
+      return this.storageAvatar;
+    }
+
+    return '';
+  }
+
+  private getInitial(): string {
+    const name: string = this.getDisplayName();
+
+    if (name.length > 0) {
+      return name.charAt(0).toUpperCase();
+    }
+
+    return '我';
+  }
+
+  private goToOtherProfile(): void {
+    const target: string = this.targetUsername.trim();
+
+    if (!target) {
+      promptAction.showToast({ message: '请输入用户名' });
+      return;
+    }
+
+    if (target === this.username || target === this.storageUsername) {
+      promptAction.showToast({ message: '这是你自己的主页' });
+      return;
+    }
+
+    router.pushUrl({
+      url: 'pages/OtherProfilePage',
+      params: {
+        username: target
+      }
+    });
+  }
+
+  private handleMenuClick(action: string): void {
+    if (action === 'favorites') {
+      router.pushUrl({ url: 'pages/MyFavoritesPage' });
+    } else if (action === 'history') {
+      router.pushUrl({ url: 'pages/MyHistoryPage' });
+    } else if (action === 'likes') {
+      router.pushUrl({ url: 'pages/MyLikesPage' });
+    } else if (action === 'comments') {
+      router.pushUrl({ url: 'pages/MyCommentsPage' });
+    } else if (action === 'uploads') {
+      router.pushUrl({ url: 'pages/MyUploadsPage' });
+    } else if (action === 'settings') {
+      router.pushUrl({ url: 'pages/SettingsPage' });
+    } else if (action === 'logout') {
+      this.logout();
+    }
+  }
+
+  private logout(): void {
     AppStorage.SetOrCreate('isLogin', false);
-    AppStorage.SetOrCreate('username', '');
-    AppStorage.SetOrCreate('userId', '');
     AppStorage.SetOrCreate('token', '');
     AppStorage.SetOrCreate('refreshToken', '');
+    AppStorage.SetOrCreate('username', '');
+    AppStorage.SetOrCreate('userId', '');
+    AppStorage.SetOrCreate('nickname', '');
+    AppStorage.SetOrCreate('avatar', '');
+    AppStorage.SetOrCreate('bio', '');
+    AppStorage.SetOrCreate('phone', '');
+    AppStorage.SetOrCreate('email', '');
 
-    this.profile = { username: '', avatar: '', bio: '' };
+    this.username = '';
+    this.nickname = '';
+    this.avatar = '';
+    this.bio = '';
+    this.targetUsername = '';
+
     promptAction.showToast({ message: '已退出登录' });
+    router.replaceUrl({ url: 'pages/LoginPage' });
   }
 }

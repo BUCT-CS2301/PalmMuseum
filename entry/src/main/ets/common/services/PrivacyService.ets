@@ -57,9 +57,11 @@ export class PrivacyService {
     return PrivacyService.toFrontend(res.data);
   }
 
+  // 注意：这里故意用 username 在前、privacy 在后，
+  // 是为了匹配你现有 PrivacySettingPage.ets 的调用方式。
   static async updateMyPrivacy(
-    privacy: PrivacySettings,
-    username?: string
+    username: string,
+    privacy: PrivacySettings
   ): Promise<PrivacySettings> {
     const targetUsername: string = username || PrivacyService.getCurrentUsername();
 

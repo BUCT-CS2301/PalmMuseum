@@ -1,4 +1,5 @@
 // common/services/UserService.ets
+import common from '@ohos.app.ability.common';
 import { HttpApi } from '../network/HttpApi';
 
 export interface ApiResponse<T> {
@@ -67,6 +68,7 @@ interface RegisterResponseData {
   phone?: string;
   email?: string;
   avatar?: string;
+  bio?: string;
   createTime?: string;
 }
 
@@ -80,6 +82,13 @@ interface CurrentUserData {
   email?: string;
   roles?: string[];
   permissions?: string[];
+}
+
+interface UpdateProfileRequestBody {
+  nickname?: string;
+  bio?: string;
+  phone?: string;
+  email?: string;
 }
 
 interface ChangePasswordRequestBody {
@@ -103,6 +112,17 @@ interface HuaweiLoginResponseData {
 }
 
 export class UserService {
+  private static saveProfileToStorage(profile: UserProfile): void {
+    AppStorage.SetOrCreate('userId', profile.objectId || '');
+    AppStorage.SetOrCreate('username', profile.username || '');
+    AppStorage.SetOrCreate('nickname', profile.nickname || profile.username || '');
+    AppStorage.SetOrCreate('avatar', profile.avatar || '');
+    AppStorage.SetOrCreate('bio', profile.bio || '');
+    AppStorage.SetOrCreate('phone', profile.phone || '');
+    AppStorage.SetOrCreate('email', profile.email || '');
+  }
+
+  // ==================== 普通登录 ====================
   static async login(username: string, password: string): Promise<LoginResult> {
     try {
       const body: LoginRequestBody = {
@@ -128,14 +148,14 @@ export class UserService {
       AppStorage.SetOrCreate('isLogin', true);
 
       if (res.data.user) {
-        AppStorage.SetOrCreate('userId', res.data.user.objectId || '');
-        AppStorage.SetOrCreate('username', res.data.user.username || username.trim());
+        const userProfile: UserProfile = UserService.toUserProfile(res.data.user, username.trim());
+        UserService.saveProfileToStorage(userProfile);
 
         return {
           success: true,
           message: '登录成功',
-          username: res.data.user.username || username.trim(),
-          userId: res.data.user.objectId || '',
+          username: userProfile.username,
+          userId: userProfile.objectId || '',
           accessToken: res.data.accessToken,
           refreshToken: res.data.refreshToken
         };
@@ -144,8 +164,7 @@ export class UserService {
       try {
         const profile: UserProfile = await UserService.getProfile();
 
-        AppStorage.SetOrCreate('userId', profile.objectId || '');
-        AppStorage.SetOrCreate('username', profile.username || username.trim());
+        UserService.saveProfileToStorage(profile);
 
         return {
           success: true,
@@ -175,6 +194,7 @@ export class UserService {
     }
   }
 
+  // ==================== 注册 ====================
   static async register(
     username: string,
     password: string,
@@ -220,6 +240,7 @@ export class UserService {
     }
   }
 
+  // ==================== 获取当前用户信息 ====================
   static async getProfile(username?: string): Promise<UserProfile> {
     const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
 
@@ -227,21 +248,60 @@ export class UserService {
       throw new Error(res.message || '获取用户信息失败');
     }
 
-    const data = res.data;
-
-    return {
-      objectId: data.objectId || '',
-      username: data.username || username || '',
-      nickname: data.nickname || data.username || '',
-      avatar: data.avatar || '',
-      bio: data.bio || '',
-      phone: data.phone || '',
-      email: data.email || '',
-      roles: data.roles || [],
-      permissions: data.permissions || []
-    };
+    return UserService.toUserProfile(res.data, username || '');
   }
 
+  // ==================== 修改个人资料 ====================
+  static async updateProfile(profile: UserProfile): Promise<UserProfile> {
+    try {
+      const body: UpdateProfileRequestBody = {
+        nickname: profile.nickname || profile.username,
+        bio: profile.bio || '',
+        phone: profile.phone || '',
+        email: profile.email || ''
+      };
+
+      const res = await HttpApi.put<ApiResponse<CurrentUserData>>('/users/me/profile', body);
+
+      if (res.code !== 200 || !res.data) {
+        throw new Error(res.message || '修改个人资料失败');
+      }
+
+      const updatedProfile: UserProfile = UserService.toUserProfile(res.data, profile.username);
+
+      UserService.saveProfileToStorage(updatedProfile);
+
+      return updatedProfile;
+    } catch (e) {
+      const error = e as Error;
+      throw new Error(error.message || '修改个人资料失败');
+    }
+  }
+
+  // ==================== 上传头像 ====================
+  static async uploadAvatar(
+    context: common.UIAbilityContext,
+    fileUri: string
+  ): Promise<string> {
+    try {
+      if (!fileUri || fileUri.length === 0) {
+        throw new Error('请选择头像图片');
+      }
+
+      await HttpApi.uploadFile(context, '/users/me/avatar', fileUri, 'file');
+
+      const profile: UserProfile = await UserService.getProfile();
+
+      UserService.saveProfileToStorage(profile);
+
+      return profile.avatar || '';
+    } catch (e) {
+      const error = e as Error;
+      throw new Error(error.message || '头像上传失败');
+    }
+  }
+
+  // ==================== 修改密码 ====================
   static async changePassword(
     oldPassword: string,
     newPassword: string
@@ -274,6 +334,7 @@ export class UserService {
     }
   }
 
+  // ==================== 华为一键登录：课程项目联调版 ====================
   static async huaweiLogin(): Promise<LoginResult> {
     try {
       const body: HuaweiLoginRequestBody = {
@@ -301,33 +362,41 @@ export class UserService {
       AppStorage.SetOrCreate('refreshToken', res.data.refreshToken || '');
       AppStorage.SetOrCreate('isLogin', true);
 
-      if (res.data.user) {
-        AppStorage.SetOrCreate('userId', res.data.user.objectId || '');
-        AppStorage.SetOrCreate('username', res.data.user.username || '');
+      try {
+        const profile: UserProfile = await UserService.getProfile();
+
+        UserService.saveProfileToStorage(profile);
 
         return {
           success: true,
           message: '华为账号登录成功',
-          username: res.data.user.username || '',
-          userId: res.data.user.objectId || '',
+          username: profile.username || '',
+          userId: profile.objectId || '',
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken
+        };
+      } catch (e) {
+        if (res.data.user) {
+          const userProfile: UserProfile = UserService.toUserProfile(res.data.user, '');
+          UserService.saveProfileToStorage(userProfile);
+
+          return {
+            success: true,
+            message: '华为账号登录成功',
+            username: userProfile.username || '',
+            userId: userProfile.objectId || '',
+            accessToken: res.data.accessToken,
+            refreshToken: res.data.refreshToken
+          };
+        }
+
+        return {
+          success: true,
+          message: '华为账号登录成功',
           accessToken: res.data.accessToken,
           refreshToken: res.data.refreshToken
         };
       }
-
-      const profile: UserProfile = await UserService.getProfile();
-
-      AppStorage.SetOrCreate('userId', profile.objectId || '');
-      AppStorage.SetOrCreate('username', profile.username || '');
-
-      return {
-        success: true,
-        message: '华为账号登录成功',
-        username: profile.username || '',
-        userId: profile.objectId || '',
-        accessToken: res.data.accessToken,
-        refreshToken: res.data.refreshToken
-      };
     } catch (e) {
       const error = e as Error;
       return {
@@ -335,5 +404,19 @@ export class UserService {
         message: error.message || '华为账号登录失败'
       };
     }
+  }
+
+  private static toUserProfile(data: CurrentUserData, fallbackUsername: string): UserProfile {
+    return {
+      objectId: data.objectId || '',
+      username: data.username || fallbackUsername || '',
+      nickname: data.nickname || data.username || fallbackUsername || '',
+      avatar: data.avatar || '',
+      bio: data.bio || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      roles: data.roles || [],
+      permissions: data.permissions || []
+    };
   }
 }

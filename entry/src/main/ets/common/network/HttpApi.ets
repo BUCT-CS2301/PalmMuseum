@@ -1,5 +1,7 @@
 // common/network/HttpApi.ets
 import http from '@ohos.net.http';
+import request from '@ohos.request';
+import common from '@ohos.app.ability.common';
 
 const BASE_URL: string = 'http://60.205.14.101:8080/api/v1';
 
@@ -10,6 +12,10 @@ export interface RequestOptions {
 interface JsonHeaders {
   'Content-Type': string;
   'Accept': string;
+  'Authorization'?: string;
+}
+
+interface UploadHeaders {
   'Authorization'?: string;
 }
 
@@ -36,6 +42,17 @@ export class HttpApi {
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
+    }
+
+    return headers;
+  }
+
+  private static buildUploadHeaders(): UploadHeaders {
+    const headers: UploadHeaders = {};
+    const token: string = HttpApi.getToken();
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
     }
 
     return headers;
@@ -214,5 +231,118 @@ export class HttpApi {
     } finally {
       httpRequest.destroy();
     }
+  }
+
+  static async uploadFile(
+    context: common.UIAbilityContext,
+    url: string,
+    fileUri: string,
+    fieldName: string
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const fullUrl: string = `${BASE_URL}${url}`;
+      const headers: UploadHeaders = HttpApi.buildUploadHeaders();
+
+      if (!headers.Authorization) {
+        reject(new Error('请先登录'));
+        return;
+      }
+
+      const fileName: string = HttpApi.getFileNameFromUri(fileUri);
+      const fileType: string = HttpApi.getFileTypeFromName(fileName);
+
+      console.info(`[REQ] UPLOAD ${fullUrl} fileUri=${fileUri}, fileName=${fileName}`);
+
+      const config: request.UploadConfig = {
+        url: fullUrl,
+        header: headers,
+        method: 'POST',
+        files: [
+          {
+            filename: fileName,
+            name: fieldName,
+            uri: fileUri,
+            type: fileType
+          }
+        ],
+        data: []
+      };
+
+      request.uploadFile(context, config)
+        .then((uploadTask: request.UploadTask) => {
+          uploadTask.on('complete', (taskStates: Array<request.TaskState>) => {
+            console.info(`[RESP] UPLOAD ${fullUrl} complete=${JSON.stringify(taskStates)}`);
+
+            if (taskStates && taskStates.length > 0) {
+              const state: request.TaskState = taskStates[0];
+
+              if (state.responseCode >= 200 && state.responseCode < 300) {
+                resolve();
+                return;
+              }
+
+              if (state.responseCode === 401) {
+                HttpApi.handleUnauthorized();
+                reject(new Error('登录已过期，请重新登录'));
+                return;
+              }
+
+              reject(new Error(state.message || `上传失败: ${state.responseCode}`));
+              return;
+            }
+
+            reject(new Error('上传失败'));
+          });
+
+          uploadTask.on('fail', (taskStates: Array<request.TaskState>) => {
+            console.error(`[RESP] UPLOAD ${fullUrl} fail=${JSON.stringify(taskStates)}`);
+
+            if (taskStates && taskStates.length > 0) {
+              const state: request.TaskState = taskStates[0];
+              reject(new Error(state.message || '上传失败'));
+              return;
+            }
+
+            reject(new Error('上传失败'));
+          });
+        })
+        .catch((error: Error) => {
+          console.error(`[HttpApi] uploadFile异常 ${JSON.stringify(error)}`);
+          reject(new Error(error.message || '上传失败'));
+        });
+    });
+  }
+
+  private static getFileNameFromUri(fileUri: string): string {
+    if (!fileUri || fileUri.length === 0) {
+      return `avatar_${new Date().getTime()}.jpg`;
+    }
+
+    const parts: string[] = fileUri.split('/');
+    const last: string = parts.length > 0 ? parts[parts.length - 1] : '';
+
+    if (last && last.indexOf('.') >= 0) {
+      return last;
+    }
+
+    return `avatar_${new Date().getTime()}.jpg`;
+  }
+
+  private static getFileTypeFromName(fileName: string): string {
+    const lowerName: string = fileName.toLowerCase();
+
+    if (lowerName.endsWith('.png')) {
+      return 'png';
+    }
+
+    if (lowerName.endsWith('.webp')) {
+      return 'webp';
+    }
+
+    if (lowerName.endsWith('.jpeg')) {
+      return 'jpeg';
+    }
+
+    return 'jpg';
   }
 }
