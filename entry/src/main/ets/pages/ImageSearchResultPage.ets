@@ -1,11 +1,7 @@
 // entry/src/main/ets/pages/ImageSearchResultPage.ets
-
 import router from '@ohos.router';
 import { BASE_URL } from '../common/Constants';
 
-/**
- * 搜索结果单条（与 DiscoverPage 传过来的结构一致）
- */
 interface SearchResultDTO {
   objectId: string;
   title: string;
@@ -21,21 +17,17 @@ interface SearchResultDTO {
 export struct ImageSearchResultPage {
   private queryImageUri: string = '';
   @State results: SearchResultDTO[] = [];
+  @State isGridMode: boolean = false; // false: 单列列表模式, true: 双列网格模式
 
   aboutToAppear() {
     const params = router.getParams() as Record<string, Object>;
     if (!params) return;
-
-    // 获取查询图片 URI（用于预览）
     this.queryImageUri = (params.image as string) ?? '';
-
-    // 解析搜索结果
     const resultsStr = params.results as string;
     if (resultsStr) {
       try {
         const parsed = JSON.parse(resultsStr) as SearchResultDTO[];
         if (Array.isArray(parsed)) {
-          // 按相似度降序排序
           parsed.sort((a, b) => b.similarity - a.similarity);
           this.results = parsed;
         } else {
@@ -50,38 +42,24 @@ export struct ImageSearchResultPage {
     }
   }
 
-  /**
-   * 将后端返回的图片 URL 转换为可加载的字符串
-   * - 如果是完整 http/https 链接，直接使用
-   * - 如果是相对路径（如 /static/xxx），拼接 BASE_URL
-   * - 其他情况（如 rawfile://）保留原逻辑（实际很少用到）
-   */
   private toImageSrc(imageUrl: string): string {
     if (!imageUrl) return '';
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       return imageUrl;
     }
     if (imageUrl.startsWith('rawfile://')) {
-      // 理论上后端不会返回此格式，保留兼容
       return imageUrl;
     }
-    // 相对路径：拼接 BASE_URL
     if (imageUrl.startsWith('/')) {
       return `${BASE_URL}${imageUrl}`;
     }
     return `${BASE_URL}/${imageUrl}`;
   }
 
-  /**
-   * 相似度转百分比字符串
-   */
   private toPercent(similarity: number): string {
     return Math.round(similarity * 100) + '%';
   }
 
-  /**
-   * 跳转详情页
-   */
   private gotoDetail(objectId: string) {
     router.pushUrl({
       url: 'pages/ArtifactDetailPage',
@@ -89,125 +67,269 @@ export struct ImageSearchResultPage {
     });
   }
 
+  // 单列卡片（水平布局）
+  @Builder
+  buildListItem(item: SearchResultDTO) {
+    Row() {
+      Image(this.toImageSrc(item.imageUrl))
+        .width(130)
+        .height(130)
+        .borderRadius(16)
+        .objectFit(ImageFit.Cover)
+        .backgroundColor('#EAE2D8')
+        .alt($r('app.media.startIcon'))
+
+      Column({ space: 6 }) {
+        Text(item.title)
+          .fontSize(21)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#333333')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(`年代：${item.period || '未知'}`)
+          .fontSize(14)
+          .fontColor('#705C48')
+
+        Text(`品类：${item.type || '无'} ｜ 材质：${item.material || '无'}`)
+          .fontSize(13)
+          .fontColor('#705C48')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(`匹配相似度：${this.toPercent(item.similarity)}`)
+          .fontSize(16)
+          .fontColor('#D15543')
+          .fontWeight(FontWeight.Medium)
+      }
+      .layoutWeight(1)
+      .margin({ left: 18 })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding(18)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(20)
+    .shadow({ radius: 9, color: '#18000000', offsetY: 3 })
+  }
+
+  // 双列卡片（垂直布局）
+  @Builder
+  buildGridItem(item: SearchResultDTO) {
+    Column() {
+      Image(this.toImageSrc(item.imageUrl))
+        .width('100%')
+        .height(150)
+        .borderRadius(16)
+        .objectFit(ImageFit.Cover)
+        .backgroundColor('#EAE2D8')
+        .alt($r('app.media.startIcon'))
+
+      Column({ space: 6 }) {
+        Text(item.title)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#333333')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(`年代：${item.period || '未知'}`)
+          .fontSize(13)
+          .fontColor('#705C48')
+
+        Text(`品类：${item.type || '无'}`)
+          .fontSize(12)
+          .fontColor('#705C48')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(`相似度：${this.toPercent(item.similarity)}`)
+          .fontSize(15)
+          .fontColor('#D15543')
+          .fontWeight(FontWeight.Medium)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, bottom: 12, top: 8 })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .backgroundColor('#FFFFFF')
+    .borderRadius(20)
+    .shadow({ radius: 6, color: '#15000000', offsetY: 2 })
+    .onClick(() => this.gotoDetail(item.objectId))
+    .padding(0)
+  }
+
   build() {
     Column() {
-      Text('以图搜图结果')
-        .fontSize(28)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#3A3A3A')
-        .margin({ top: 40, bottom: 20 })
+      // ========== 顶部区域：返回按钮 + 居中检索原图 + 右侧数量/切换 ==========
+      Row() {
+        // 左侧返回按钮
+        Button(" ← ", { stateEffect: true })
+          .fontSize(15)
+          .backgroundColor('#C76B5A')
+          .fontColor(Color.White)
+          .borderRadius(22)
+          .width(80)
+          .height(38)
+          .onClick(() => router.back())
 
-      // 查询图片预览（可选，提升用户体验）
-      if (this.queryImageUri) {
-        Row() {
-          Text('查询图片：')
-            .fontSize(14)
-            .fontColor('#8B7355')
-          Image(this.queryImageUri)
-            .width(80)
-            .height(80)
-            .borderRadius(8)
-            .objectFit(ImageFit.Cover)
-            .margin({ left: 12 })
+        // 中间区域：检索原图（居中显示）
+        if (this.queryImageUri) {
+          Row() {
+            Image(this.queryImageUri)
+              .width(80)
+              .height(80)
+              .borderRadius(12)
+              .objectFit(ImageFit.Cover)
+              .margin({ right: 10 })
+            Text("原图")
+              .fontSize(14)
+              .fontColor('#8B7355')
+          }
+          .padding({ left: 10, right: 10, top: 2, bottom: 6 })
+          .backgroundColor('#FFFFFF')
+          .borderRadius(30)
+          .shadow({ radius: 4, color: '#15000000', offsetY: 1 })
+        } else {
+          // 若无原图，留空占位保持布局
+          Row().width(80)
         }
-        .width('92%')
-        .padding({ left: 16, top: 8, bottom: 8 })
-        .backgroundColor('#FFFFFF')
-        .borderRadius(12)
-        .margin({ bottom: 16 })
-      }
 
+        // 右侧区域：统计数量 + 视图切换按钮
+        Row({ space: 12 }) {
+          // 共找到多少件文物
+          Text(`共 ${this.results.length} 件`)
+            .fontSize(14)
+            .fontColor('#705C48')
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .backgroundColor('#F0E8E0')
+            .borderRadius(20)
+
+          // 切换按钮组
+          Row({ space: 4 }) {
+            // 单列模式按钮
+            Button() {
+              Column() {
+                Text('▮')
+                  .fontSize(14)
+                  .rotate({ angle: 90 })
+                  .margin({ bottom: -4 })
+                Text('单列')
+                  .fontSize(10)
+              }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+            }
+            .width(44)
+            .height(44)
+            .backgroundColor(this.isGridMode ? '#F0E8E0' : '#C76B5A')
+            .fontColor(this.isGridMode ? '#8B7355' : Color.White)
+            .borderRadius(22)
+            .onClick(() => {
+              this.isGridMode = false;
+            })
+
+            // 双列模式按钮
+            Button() {
+              Column() {
+                Text('▮▮')
+                  .fontSize(14)
+                  .letterSpacing(4)
+                  .margin({ bottom: -4 })
+                Text('双列')
+                  .fontSize(10)
+              }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+            }
+            .width(44)
+            .height(44)
+            .backgroundColor(this.isGridMode ? '#C76B5A' : '#F0E8E0')
+            .fontColor(this.isGridMode ? Color.White : '#8B7355')
+            .borderRadius(22)
+            .onClick(() => {
+              this.isGridMode = true;
+            })
+          }
+          .backgroundColor('#FFFFFFE6')
+          .borderRadius(28)
+          .padding(4)
+        }
+      }
+      .width('94%')
+      .justifyContent(FlexAlign.SpaceBetween)
+      .alignItems(VerticalAlign.Center)
+      .margin({ top: 40, bottom: 16 })
+
+      // ========== 结果列表区域（支持单列/双列切换） ==========
       if (this.results.length === 0) {
         this.emptyState()
       } else {
-        List() {
-          ForEach(this.results, (item: SearchResultDTO) => {
-            ListItem() {
-              Row() {
-                Image(this.toImageSrc(item.imageUrl))
-                  .width(120)
-                  .height(120)
-                  .borderRadius(12)
-                  .objectFit(ImageFit.Cover)
-                  .backgroundColor('#E0D5C6')
-                  .alt($r('app.media.startIcon'))
-
-                Column() {
-                  Text(item.title)
-                    .fontSize(22)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#3A3A3A')
-                    .margin({ bottom: 8 })
-
-                  Text('年代：' + item.period)
-                    .fontSize(15)
-                    .fontColor('#8B7355')
-                    .margin({ bottom: 4 })
-
-                  Text('类型：' + item.type + ' · 材质：' + item.material)
-                    .fontSize(14)
-                    .fontColor('#8B7355')
-                    .margin({ bottom: 8 })
-
-                  Text('相似度：' + this.toPercent(item.similarity))
-                    .fontSize(18)
-                    .fontColor('#C05040')
-                    .fontWeight(FontWeight.Bold)
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-                .margin({ left: 16 })
+        if (!this.isGridMode) {
+          // 单列模式：上下竖排List
+          List({ space: 18 }) {
+            ForEach(this.results, (item: SearchResultDTO) => {
+              ListItem() {
+                this.buildListItem(item)
               }
-              .width('100%')
-              .padding(16)
-              .backgroundColor('#FFFFFF')
-              .borderRadius(12)
-              .shadow({ radius: 6, color: '#18000000', offsetY: 2 })
-            }
-            .margin({ bottom: 16 })
-            .onClick(() => {
-              this.gotoDetail(item.objectId);
-            })
-          })
+              .onClick(() => this.gotoDetail(item.objectId))
+            }, (item: SearchResultDTO) => item.objectId)
+          }
+          .width('94%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+        } else {
+          // 双列模式：横向两列Grid
+          Grid() {
+            ForEach(this.results, (item: SearchResultDTO) => {
+              GridItem() {
+                this.buildGridItem(item)
+              }
+            }, (item: SearchResultDTO) => item.objectId)
+          }
+          .columnsTemplate('1fr 1fr')
+          .rowsGap(18)
+          .columnsGap(16)
+          .width('94%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
         }
-        .width('92%')
-        .layoutWeight(1)
       }
-
       Blank()
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F0E8')
+    .backgroundColor('#F7F2E9')
     .alignItems(HorizontalAlign.Center)
   }
 
+  // 空白页面（未找到文物时显示）
   @Builder
   emptyState() {
-    Column({ space: 16 }) {
-      Text('🔍')
-        .fontSize(56)
-      Text('搜不到相似文物')
-        .fontSize(22)
+    Column({ space: 22 }) {
+      Text('🔎')
+        .fontSize(72)
+      Text('暂无匹配文物')
+        .fontSize(24)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#3A3A3A')
-      Text('这张图和库里的文物都不够像，换一张更接近的图再试试。')
-        .fontSize(14)
+        .fontColor('#444444')
+      Text('图片特征匹配度过低，请更换文物实拍图片重新搜索')
+        .fontSize(15)
         .fontColor('#8B7355')
         .textAlign(TextAlign.Center)
-        .width('80%')
-      Button('返回重拍 / 重选')
-        .height(46)
-        .fontSize(15)
+        .width('85%')
+      Button('返回重新拍照/选图')
+        .width(220)
+        .height(48)
+        .fontSize(16)
         .backgroundColor('#C76B5A')
         .fontColor(Color.White)
-        .borderRadius(12)
-        .margin({ top: 8 })
-        .onClick(() => {
-          router.back();
-        })
+        .borderRadius(24)
+        .margin({ top: 12 })
+        .onClick(() => router.back())
     }
-    .width('100%')
+    .width('90%')
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)

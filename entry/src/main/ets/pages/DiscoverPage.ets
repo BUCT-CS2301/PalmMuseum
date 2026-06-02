@@ -1,5 +1,6 @@
 // entry/src/main/ets/pages/DiscoverPage.ets
-
+// 顶部导入
+import { DEFAULT_TOP_K, DEFAULT_THRESHOLD } from '../common/Constants';
 import promptAction from '@ohos.promptAction';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
 import picker from '@ohos.file.picker';
@@ -141,8 +142,8 @@ export struct DiscoverPage {
     try {
       // 从 uri 中提取文件名（用于服务端表单字段）
       const fileName = uri.split('/').pop() || 'image.jpg';
-      const TOP_K = 5;
-      const THRESHOLD = 0.85;
+      const TOP_K = DEFAULT_TOP_K;
+      const THRESHOLD = DEFAULT_THRESHOLD;
 
       const response: SearchResponse = await SearchService.searchByImage(
         uri,
