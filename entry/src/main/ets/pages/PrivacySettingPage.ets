@@ -1,3 +1,4 @@
+// pages/PrivacySettingPage.ets
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { PrivacySettings } from '../common/models/InteractionModels';
@@ -15,7 +16,8 @@ export struct PrivacySettingPage {
     showPhotos: true
   };
 
-  // 用于强制刷新 Toggle，避免 Toggle 显示状态不跟随异步读取结果更新
+  @State isLoading: boolean = false;
+  @State isSaving: boolean = false;
   @State refreshKey: number = 0;
 
   aboutToAppear() {
@@ -51,17 +53,35 @@ export struct PrivacySettingPage {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      Column({ space: 12 }) {
-        if (this.refreshKey >= 0) {
-          this.FavoritePrivacyRow()
-          this.LikePrivacyRow()
-          this.CommentPrivacyRow()
-          this.PhotoPrivacyRow()
-        }
-      }
-      .width('100%')
+      if (this.isLoading) {
+        Column() {
+          LoadingProgress()
+            .width(38)
+            .height(38)
+            .color('#C05040')
 
-      Text('设置会实时保存，后续接入后端时可直接映射到用户配置接口。')
+          Text('正在读取隐私设置...')
+            .fontSize(13)
+            .fontColor('#8B7355')
+            .margin({ top: 10 })
+        }
+        .width('100%')
+        .height(160)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Column({ space: 12 }) {
+          if (this.refreshKey >= 0) {
+            this.FavoritePrivacyRow()
+            this.LikePrivacyRow()
+            this.CommentPrivacyRow()
+            this.PhotoPrivacyRow()
+          }
+        }
+        .width('100%')
+      }
+
+      Text(this.isSaving ? '正在保存设置...' : '设置会实时保存，并同步到后端隐私配置。')
         .fontSize(12)
         .fontColor('#8B7355')
         .width('100%')
@@ -199,6 +219,8 @@ export struct PrivacySettingPage {
       return;
     }
 
+    this.isLoading = true;
+
     try {
       const saved: PrivacySettings = await PrivacyService.getMyPrivacy(this.username);
 
@@ -226,15 +248,37 @@ export struct PrivacySettingPage {
 
       this.refreshKey++;
       promptAction.showToast({ message: '读取隐私设置失败，已使用默认设置' });
+    } finally {
+      this.isLoading = false;
     }
   }
 
   private async updatePrivacy(key: string, value: boolean): Promise<void> {
+    if (this.isLoading) {
+      return;
+    }
+
     if (!this.username) {
       promptAction.showToast({ message: '请先登录' });
       console.error('[PrivacySettingPage] username 为空，无法保存隐私设置');
       return;
     }
+
+    const currentValue: boolean = this.getCurrentValue(key);
+
+    // 关键修复：
+    // Toggle 初始化或异步刷新时可能触发 onChange。
+    // 如果传进来的 value 和当前状态一致，说明不是用户主动改变，不保存、不弹 toast。
+    if (currentValue === value) {
+      return;
+    }
+
+    const oldPrivacy: PrivacySettings = {
+      showFavorites: this.privacy.showFavorites,
+      showLikes: this.privacy.showLikes,
+      showComments: this.privacy.showComments,
+      showPhotos: this.privacy.showPhotos
+    };
 
     const nextPrivacy: PrivacySettings = {
       showFavorites: this.privacy.showFavorites,
@@ -253,7 +297,6 @@ export struct PrivacySettingPage {
       nextPrivacy.showPhotos = value;
     }
 
-    // 先更新页面状态，让开关立即响应
     this.privacy = {
       showFavorites: nextPrivacy.showFavorites,
       showLikes: nextPrivacy.showLikes,
@@ -262,6 +305,7 @@ export struct PrivacySettingPage {
     };
 
     this.refreshKey++;
+    this.isSaving = true;
 
     try {
       const saved: PrivacySettings = await PrivacyService.updateMyPrivacy(this.username, this.privacy);
@@ -282,10 +326,38 @@ export struct PrivacySettingPage {
       promptAction.showToast({ message: '设置已更新' });
     } catch (error) {
       console.error(`[PrivacySettingPage] 保存隐私设置失败 ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '保存失败，请重试' });
 
-      // 保存失败时重新读取，避免页面状态和真实数据不一致
-      await this.loadPrivacy();
+      this.privacy = {
+        showFavorites: oldPrivacy.showFavorites,
+        showLikes: oldPrivacy.showLikes,
+        showComments: oldPrivacy.showComments,
+        showPhotos: oldPrivacy.showPhotos
+      };
+
+      this.refreshKey++;
+      promptAction.showToast({ message: '保存失败，请重试' });
+    } finally {
+      this.isSaving = false;
     }
+  }
+
+  private getCurrentValue(key: string): boolean {
+    if (key === 'favorite') {
+      return this.privacy.showFavorites;
+    }
+
+    if (key === 'like') {
+      return this.privacy.showLikes;
+    }
+
+    if (key === 'comment') {
+      return this.privacy.showComments;
+    }
+
+    if (key === 'photo') {
+      return this.privacy.showPhotos;
+    }
+
+    return true;
   }
 }

@@ -18,8 +18,15 @@ export struct ProfilePage {
   @State bio: string = '';
   @State isLoading: boolean = false;
   @State targetUsername: string = '';
+  @State avatarLoadFailed: boolean = false;
 
   aboutToAppear() {
+    this.syncProfileFromStorage();
+    this.loadProfile();
+  }
+
+  onPageShow() {
+    this.syncProfileFromStorage();
     this.loadProfile();
   }
 
@@ -122,7 +129,7 @@ export struct ProfilePage {
   @Builder
   ProfileHeader() {
     Column() {
-      if (this.getAvatarUrl().length > 0) {
+      if (this.getAvatarUrl().length > 0 && !this.avatarLoadFailed) {
         Image(this.getAvatarUrl())
           .width(86)
           .height(86)
@@ -131,6 +138,10 @@ export struct ProfilePage {
           .backgroundColor('#E0D5C6')
           .alt($r('app.media.startIcon'))
           .margin({ top: 22, bottom: 10 })
+          .onError(() => {
+            console.error(`[ProfilePage] 头像加载失败 url=${this.getAvatarUrl()}`);
+            this.avatarLoadFailed = true;
+          })
       } else {
         Stack() {
           Circle({ width: 86, height: 86 })
@@ -265,8 +276,32 @@ export struct ProfilePage {
     })
   }
 
+  private syncProfileFromStorage(): void {
+    if (this.storageUsername && this.storageUsername.trim().length > 0) {
+      this.username = this.storageUsername;
+    }
+
+    if (this.storageNickname && this.storageNickname.trim().length > 0) {
+      this.nickname = this.storageNickname;
+    }
+
+    if (this.storageAvatar && this.storageAvatar.trim().length > 0) {
+      this.avatar = this.storageAvatar;
+    }
+
+    if (this.storageBio && this.storageBio.trim().length > 0) {
+      this.bio = this.storageBio;
+    }
+
+    this.avatarLoadFailed = false;
+  }
+
   private async loadProfile(): Promise<void> {
     if (!this.isLogin) {
+      return;
+    }
+
+    if (this.isLoading) {
       return;
     }
 
@@ -278,6 +313,7 @@ export struct ProfilePage {
       this.username = profile.username || this.storageUsername || '';
       this.nickname = profile.nickname || profile.username || '';
       this.avatar = profile.avatar || '';
+      this.avatarLoadFailed = false;
       this.bio = profile.bio || '';
 
       AppStorage.SetOrCreate('username', this.username);
@@ -301,43 +337,43 @@ export struct ProfilePage {
   }
 
   private getDisplayName(): string {
-    if (this.nickname && this.nickname.trim().length > 0) {
-      return this.nickname;
-    }
-
     if (this.storageNickname && this.storageNickname.trim().length > 0) {
       return this.storageNickname;
     }
 
-    if (this.username && this.username.trim().length > 0) {
-      return this.username;
+    if (this.nickname && this.nickname.trim().length > 0) {
+      return this.nickname;
     }
 
     if (this.storageUsername && this.storageUsername.trim().length > 0) {
       return this.storageUsername;
     }
 
+    if (this.username && this.username.trim().length > 0) {
+      return this.username;
+    }
+
     return '掌上博物馆用户';
   }
 
   private getBioText(): string {
-    if (this.bio && this.bio.trim().length > 0) {
-      return this.bio;
-    }
-
     if (this.storageBio && this.storageBio.trim().length > 0) {
       return this.storageBio;
+    }
+
+    if (this.bio && this.bio.trim().length > 0) {
+      return this.bio;
     }
 
     return '这个人还没有写简介';
   }
 
   private hasBio(): boolean {
-    if (this.bio && this.bio.trim().length > 0) {
+    if (this.storageBio && this.storageBio.trim().length > 0) {
       return true;
     }
 
-    if (this.storageBio && this.storageBio.trim().length > 0) {
+    if (this.bio && this.bio.trim().length > 0) {
       return true;
     }
 
@@ -345,12 +381,12 @@ export struct ProfilePage {
   }
 
   private getAvatarUrl(): string {
-    if (this.avatar && this.avatar.trim().length > 0) {
-      return this.avatar;
-    }
-
     if (this.storageAvatar && this.storageAvatar.trim().length > 0) {
       return this.storageAvatar;
+    }
+
+    if (this.avatar && this.avatar.trim().length > 0) {
+      return this.avatar;
     }
 
     return '';

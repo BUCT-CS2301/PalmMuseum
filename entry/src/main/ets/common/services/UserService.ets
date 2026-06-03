@@ -111,6 +111,16 @@ interface HuaweiLoginResponseData {
   user?: CurrentUserData;
 }
 
+interface AvatarBase64RequestBody {
+  fileName: string;
+  contentType: string;
+  base64: string;
+}
+
+interface AvatarUploadData {
+  avatar: string;
+}
+
 export class UserService {
   private static saveProfileToStorage(profile: UserProfile): void {
     AppStorage.SetOrCreate('userId', profile.objectId || '');
@@ -122,7 +132,6 @@ export class UserService {
     AppStorage.SetOrCreate('email', profile.email || '');
   }
 
-  // ==================== 普通登录 ====================
   static async login(username: string, password: string): Promise<LoginResult> {
     try {
       const body: LoginRequestBody = {
@@ -194,7 +203,6 @@ export class UserService {
     }
   }
 
-  // ==================== 注册 ====================
   static async register(
     username: string,
     password: string,
@@ -240,7 +248,6 @@ export class UserService {
     }
   }
 
-  // ==================== 获取当前用户信息 ====================
   static async getProfile(username?: string): Promise<UserProfile> {
     const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
 
@@ -251,7 +258,6 @@ export class UserService {
     return UserService.toUserProfile(res.data, username || '');
   }
 
-  // ==================== 修改个人资料 ====================
   static async updateProfile(profile: UserProfile): Promise<UserProfile> {
     try {
       const body: UpdateProfileRequestBody = {
@@ -278,7 +284,42 @@ export class UserService {
     }
   }
 
-  // ==================== 上传头像 ====================
+  static async uploadAvatarBase64(
+    fileName: string,
+    contentType: string,
+    base64: string
+  ): Promise<string> {
+    try {
+      const body: AvatarBase64RequestBody = {
+        fileName: fileName,
+        contentType: contentType,
+        base64: base64
+      };
+
+      const res = await HttpApi.post<ApiResponse<AvatarUploadData>>(
+        '/users/me/avatar-base64',
+        body
+      );
+
+      if (res.code !== 200 || !res.data || !res.data.avatar) {
+        throw new Error(res.message || '头像上传失败');
+      }
+
+      AppStorage.SetOrCreate('avatar', res.data.avatar);
+
+      try {
+        const profile: UserProfile = await UserService.getProfile();
+        UserService.saveProfileToStorage(profile);
+        return profile.avatar || res.data.avatar;
+      } catch (e) {
+        return res.data.avatar;
+      }
+    } catch (e) {
+      const error = e as Error;
+      throw new Error(error.message || '头像上传失败');
+    }
+  }
+
   static async uploadAvatar(
     context: common.UIAbilityContext,
     fileUri: string
@@ -301,7 +342,6 @@ export class UserService {
     }
   }
 
-  // ==================== 修改密码 ====================
   static async changePassword(
     oldPassword: string,
     newPassword: string
@@ -334,7 +374,6 @@ export class UserService {
     }
   }
 
-  // ==================== 华为一键登录：课程项目联调版 ====================
   static async huaweiLogin(): Promise<LoginResult> {
     try {
       const body: HuaweiLoginRequestBody = {

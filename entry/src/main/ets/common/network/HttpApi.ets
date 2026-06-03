@@ -44,6 +44,7 @@ export class HttpApi {
 
     if (!options || !options.skipAuth) {
       const token: string = HttpApi.getToken();
+
       if (token) {
         headers.Authorization = `Bearer ${token}`;
       }
@@ -131,7 +132,11 @@ export class HttpApi {
       const headers: JsonHeaders = HttpApi.buildJsonHeaders(options);
       const requestBody: string = JSON.stringify(body);
 
-      console.info(`[REQ] POST ${fullUrl} body=${requestBody}`);
+      if (url.indexOf('avatar-base64') >= 0) {
+        console.info(`[REQ] POST ${fullUrl} body=<avatar-base64 omitted>, length=${requestBody.length}`);
+      } else {
+        console.info(`[REQ] POST ${fullUrl} body=${requestBody}`);
+      }
 
       const response = await httpRequest.request(fullUrl, {
         method: http.RequestMethod.POST,
@@ -254,10 +259,17 @@ export class HttpApi {
         return;
       }
 
+      if (!fileUri || fileUri.length === 0) {
+        reject(new Error('上传文件路径为空'));
+        return;
+      }
+
       const fileName: string = HttpApi.getFileNameFromUri(fileUri);
       const fileType: string = HttpApi.getFileTypeFromName(fileName);
 
-      console.info(`[REQ] UPLOAD ${fullUrl} fileUri=${fileUri}, fileName=${fileName}`);
+      console.info(`[REQ] UPLOAD ${fullUrl}`);
+      console.info(`[REQ] UPLOAD fileUri=${fileUri}`);
+      console.info(`[REQ] UPLOAD fileName=${fileName}, fileType=${fileType}`);
 
       const config: request.UploadConfig = {
         url: fullUrl,
@@ -293,11 +305,11 @@ export class HttpApi {
                 return;
               }
 
-              reject(new Error(state.message || `上传失败: ${state.responseCode}`));
+              reject(new Error(`上传失败：code=${state.responseCode}, message=${state.message || '无错误信息'}`));
               return;
             }
 
-            reject(new Error('上传失败'));
+            reject(new Error('上传失败：无任务状态'));
           });
 
           uploadTask.on('fail', (taskStates: Array<request.TaskState>) => {
@@ -305,11 +317,11 @@ export class HttpApi {
 
             if (taskStates && taskStates.length > 0) {
               const state: request.TaskState = taskStates[0];
-              reject(new Error(state.message || '上传失败'));
+              reject(new Error(`上传失败：code=${state.responseCode}, message=${state.message || '无错误信息'}`));
               return;
             }
 
-            reject(new Error('上传失败'));
+            reject(new Error('上传失败：无任务状态'));
           });
         })
         .catch((error: Error) => {
@@ -338,17 +350,21 @@ export class HttpApi {
     const lowerName: string = fileName.toLowerCase();
 
     if (lowerName.endsWith('.png')) {
-      return 'png';
+      return 'image/png';
     }
 
     if (lowerName.endsWith('.webp')) {
-      return 'webp';
+      return 'image/webp';
     }
 
     if (lowerName.endsWith('.jpeg')) {
-      return 'jpeg';
+      return 'image/jpeg';
     }
 
-    return 'jpg';
+    if (lowerName.endsWith('.jpg')) {
+      return 'image/jpeg';
+    }
+
+    return 'image/jpeg';
   }
 }
