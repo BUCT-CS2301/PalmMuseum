@@ -19,6 +19,11 @@ interface UploadHeaders {
   'Authorization'?: string;
 }
 
+export interface UploadFormField {
+  name: string;
+  value: string;
+}
+
 interface ErrorResponse {
   code?: number;
   message?: string;
@@ -237,7 +242,8 @@ export class HttpApi {
     context: common.UIAbilityContext,
     url: string,
     fileUri: string,
-    fieldName: string
+    fieldName: string,
+    data: UploadFormField[] = []
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const fullUrl: string = `${BASE_URL}${url}`;
@@ -265,7 +271,7 @@ export class HttpApi {
             type: fileType
           }
         ],
-        data: []
+        data: data
       };
 
       request.uploadFile(context, config)

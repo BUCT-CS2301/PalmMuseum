@@ -277,10 +277,15 @@ export struct MyFavoritesPage {
           .fontSize(13)
           .fontColor('#C05040')
           .onClick(async () => {
-            await interactionStore.removeFavorite(item.artifactId, this.username);
-            this.editingArtifactId = '';
-            promptAction.showToast({ message: '已移出收藏夹' });
-            await this.loadFavorites();
+            try {
+              await interactionStore.removeFavorite(item.artifactId, this.username);
+              this.editingArtifactId = '';
+              promptAction.showToast({ message: 'Favorite removed' });
+              await this.loadFavorites();
+            } catch (error) {
+              const err = error as Error;
+              promptAction.showToast({ message: err.message || 'Remove failed' });
+            }
           })
       }
       .width('100%')
@@ -298,9 +303,14 @@ export struct MyFavoritesPage {
               .borderRadius(14)
               .margin({ right: 8, top: 10 })
               .onClick(async () => {
-                await interactionStore.moveFavoriteToGroup(item.artifactId, this.username, groupName);
-                promptAction.showToast({ message: `已移到“${groupName}”` });
-                await this.loadFavorites();
+                try {
+                  await interactionStore.moveFavoriteToGroup(item.artifactId, this.username, groupName);
+                  promptAction.showToast({ message: `Moved to ${groupName}` });
+                  await this.loadFavorites();
+                } catch (error) {
+                  const err = error as Error;
+                  promptAction.showToast({ message: err.message || 'Move failed' });
+                }
               })
           }, (groupName: string) => groupName)
         }

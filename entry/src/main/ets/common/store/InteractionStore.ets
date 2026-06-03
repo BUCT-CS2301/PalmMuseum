@@ -1,41 +1,71 @@
+import common from '@ohos.app.ability.common';
 import { Artifact } from '../models/Artifact';
 import {
   CommentItem,
-  CreatedAtItem,
-  DEFAULT_PRIVACY_SETTINGS,
   FAVORITE_GROUPS,
   FavoriteGroupSummary,
   FavoriteItem,
   HistoryItem,
   InteractionSummary,
-  LikeItem,          // 新增导入
+  LikeItem,
   PrivacySettings,
   ReviewStatus,
   UploadedPhotoItem,
   UploadDraft,
   UserInteractionStats
 } from '../models/InteractionModels';
+import { HttpApi, UploadFormField } from '../network/HttpApi';
 import { preferencesUtil } from '../utils/PreferencesUtil';
+
+interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
 
 interface CommentResult {
   ok: boolean;
   message: string;
 }
 
+interface DateSortable {
+  createdAt?: string;
+  viewedAt?: string;
+  likedAt?: string;
+}
+
+interface EmptyRequestBody {
+}
+
+interface FavoriteRequestBody {
+  artifactId: string;
+  groupName: string;
+}
+
+interface HistoryRequestBody {
+  artifactId: string;
+}
+
+interface CommentCreateRequestBody {
+  content: string;
+  parentId?: string;
+  replyTo?: string;
+}
+
+type RawValue = Object | Object[] | string | number | boolean | null | undefined;
+type RawRecord = Record<string, RawValue>;
+
 const BLOCKED_WORDS: string[] = ['广告', 'spam', '辱骂', '违法'];
-const MAX_HISTORY = 20;
-const COMMENT_REVIEW_DELAY_MS = 1500;
 
 class InteractionStore {
-  private readonly likeKey = 'pm.likes';
-  private readonly likeItemsKey = 'pm.likeItems';
-  private readonly favoriteKey = 'pm.favorites';
   private readonly favoriteGroupKey = 'pm.favoriteGroups';
-  private readonly commentKey = 'pm.comments';
-  private readonly commentLikeKey = 'pm.commentLikes';
-  private readonly uploadKey = 'pm.uploads';
-  private readonly historyKey = 'pm.history';
   private readonly privacyKey = 'pm.privacy';
+  private readonly likeSummaryCache = new Map<string, InteractionSummary>();
+  private readonly favoriteSummaryCache = new Map<string, InteractionSummary>();
+
+  private buildArtifactCacheKey(username: string, artifactId: string): string {
+    return `${username || 'guest'}::${artifactId}`;
+  }
 
   private notifyInteractionChanged(): void {
     AppStorage.SetOrCreate('interactionVersion', Date.now());
@@ -50,11 +80,17 @@ class InteractionStore {
       this.notifyInteractionChanged();
       return;
     }
-    const stats = await this.getStats(username);
-    AppStorage.SetOrCreate('profileLikes', stats.likes);
-    AppStorage.SetOrCreate('profileFavorites', stats.favorites);
-    AppStorage.SetOrCreate('profileComments', stats.comments);
-    AppStorage.SetOrCreate('profilePhotos', stats.photos);
+
+    try {
+      const stats = await this.getStats(username);
+      AppStorage.SetOrCreate('profileLikes', stats.likes);
+      AppStorage.SetOrCreate('profileFavorites', stats.favorites);
+      AppStorage.SetOrCreate('profileComments', stats.comments);
+      AppStorage.SetOrCreate('profilePhotos', stats.photos);
+    } catch (error) {
+      console.error(`[InteractionStore] syncProfileStats failed ${JSON.stringify(error)}`);
+    }
+
     this.notifyInteractionChanged();
   }
 
@@ -66,7 +102,7 @@ class InteractionStore {
       }
       return JSON.parse(text) as T;
     } catch (error) {
-      console.error(`读取本地交互数据失败: ${key} ${JSON.stringify(error)}`);
+      console.error(`[InteractionStore] read local config failed key=${key} error=${JSON.stringify(error)}`);
       return fallback;
     }
   }
@@ -77,7 +113,7 @@ class InteractionStore {
 
   private mapToObject<K, V>(map: Map<K, V>): Record<string, V> {
     const obj: Record<string, V> = {};
-    map.forEach((value, key) => {
+    map.forEach((value: V, key: K) => {
       obj[String(key)] = value;
     });
     return obj;
@@ -125,299 +161,349 @@ class InteractionStore {
     return FAVORITE_GROUPS.indexOf(groupName) > -1 ? groupName : FAVORITE_GROUPS[0];
   }
 
-  private sortByDateDesc<T extends CreatedAtItem>(items: T[]): T[] {
+  private sortByDateDesc<T extends DateSortable>(items: T[]): T[] {
     return [...items].sort((left: T, right: T) => {
-      const leftTime = new Date(left.createdAt).getTime();
-      const rightTime = new Date(right.createdAt).getTime();
+      const leftTime = new Date(left.createdAt || left.viewedAt || left.likedAt || '').getTime();
+      const rightTime = new Date(right.createdAt || right.viewedAt || right.likedAt || '').getTime();
       return rightTime - leftTime;
     });
   }
 
-  private buildLikeBaseCount(artifactId: string): number {
-    const seed = Number(artifactId);
-    return Number.isNaN(seed) ? 16 : 16 + seed * 5;
+  private readRecord(value: RawValue): RawRecord {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as RawRecord;
+    }
+    return {};
   }
 
-  private buildFavoriteBaseCount(artifactId: string): number {
-    const seed = Number(artifactId);
-    return Number.isNaN(seed) ? 8 : 8 + seed * 3;
+  private extractArray<T>(data: RawValue): T[] {
+    if (Array.isArray(data)) {
+      return data as T[];
+    }
+
+    const record = this.readRecord(data);
+    if (Array.isArray(record['items'])) {
+      return record['items'] as T[];
+    }
+    if (Array.isArray(record['records'])) {
+      return record['records'] as T[];
+    }
+    if (Array.isArray(record['list'])) {
+      return record['list'] as T[];
+    }
+    if (Array.isArray(record['content'])) {
+      return record['content'] as T[];
+    }
+    return [];
   }
 
-  private buildCommentBaseCount(commentId: string): number {
-    if (!commentId.startsWith('seed-')) {
-      return 0;
-    }
-    let total = 0;
-    for (let index = 0; index < commentId.length; index += 1) {
-      total += commentId.charCodeAt(index);
-    }
-    return 2 + total % 5;
-  }
-
-  private cloneCommentItem(item: CommentItem): CommentItem {
-    const cloned: CommentItem = {
-      id: item.id,
-      artifactId: item.artifactId,
-      artifactTitle: item.artifactTitle,
-      username: item.username,
-      content: item.content,
-      createdAt: item.createdAt,
-      status: item.status
-    };
-    if (item.parentId) {
-      cloned.parentId = item.parentId;
-    }
-    if (item.replyTo) {
-      cloned.replyTo = item.replyTo;
-    }
-    if (item.likeCount !== undefined) {
-      cloned.likeCount = item.likeCount;
-    }
-    if (item.likedByCurrentUser !== undefined) {
-      cloned.likedByCurrentUser = item.likedByCurrentUser;
-    }
-    return cloned;
-  }
-
-  private shouldAutoApproveComment(item: CommentItem): boolean {
-    if (item.status !== ReviewStatus.Pending) {
-      return false;
-    }
-    const createdTime = new Date(item.createdAt).getTime();
-    if (Number.isNaN(createdTime)) {
-      return true;
-    }
-    return Date.now() - createdTime >= COMMENT_REVIEW_DELAY_MS;
-  }
-
-  private async syncCommentReviewStatus(comments: CommentItem[]): Promise<CommentItem[]> {
-    let changed = false;
-    const synced: CommentItem[] = comments.map((item: CommentItem): CommentItem => {
-      const nextItem = this.cloneCommentItem(item);
-      if (this.shouldAutoApproveComment(nextItem)) {
-        nextItem.status = ReviewStatus.Approved;
-        changed = true;
+  private readString(record: RawRecord, keys: string[], fallback: string = ''): string {
+    for (let index = 0; index < keys.length; index += 1) {
+      const value = record[keys[index]];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value;
       }
-      return nextItem;
-    });
-    if (changed) {
-      await this.setJsonValue(this.commentKey, synced);
-    }
-    return synced;
-  }
-
-  private cloneUploadItem(item: UploadedPhotoItem): UploadedPhotoItem {
-    return {
-      id: item.id,
-      artifactId: item.artifactId,
-      artifactTitle: item.artifactTitle,
-      username: item.username,
-      imageUri: item.imageUri,
-      location: item.location,
-      description: item.description,
-      createdAt: item.createdAt,
-      status: item.status
-    };
-  }
-
-  private shouldAutoApproveUpload(item: UploadedPhotoItem): boolean {
-    if (item.status !== ReviewStatus.Pending) {
-      return false;
-    }
-    const createdTime = new Date(item.createdAt).getTime();
-    if (Number.isNaN(createdTime)) {
-      return true;
-    }
-    return Date.now() - createdTime >= COMMENT_REVIEW_DELAY_MS;
-  }
-
-  private async syncUploadReviewStatus(items: UploadedPhotoItem[]): Promise<UploadedPhotoItem[]> {
-    let changed = false;
-    const synced: UploadedPhotoItem[] = items.map((item: UploadedPhotoItem): UploadedPhotoItem => {
-      const nextItem = this.cloneUploadItem(item);
-      if (this.shouldAutoApproveUpload(nextItem)) {
-        nextItem.status = ReviewStatus.Approved;
-        changed = true;
+      if (typeof value === 'number') {
+        return String(value);
       }
-      return nextItem;
-    });
-    if (changed) {
-      await this.setJsonValue(this.uploadKey, synced);
     }
-    return synced;
+    return fallback;
   }
 
-  private getSeedComments(artifactId: string): CommentItem[] {
-    return [
-      {
-        id: `seed-${artifactId}-1`,
-        artifactId: artifactId,
-        artifactTitle: '',
-        username: '文博爱好者',
-        content: '文物信息很完整，配合语音讲解一起看体验更好。',
-        createdAt: '2026-05-10T10:00:00.000Z',
-        status: ReviewStatus.Approved
-      },
-      {
-        id: `seed-${artifactId}-2`,
-        artifactId: artifactId,
-        artifactTitle: '',
-        username: '海外馆藏观察员',
-        content: '如果能补充同年代关联文物，会更方便横向比较。',
-        createdAt: '2026-05-12T14:30:00.000Z',
-        status: ReviewStatus.Approved
+  private readNumber(record: RawRecord, keys: string[], fallback: number = 0): number {
+    for (let index = 0; index < keys.length; index += 1) {
+      const value = record[keys[index]];
+      if (typeof value === 'number') {
+        return value;
       }
-    ];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        const parsed = Number(value);
+        if (!Number.isNaN(parsed)) {
+          return parsed;
+        }
+      }
+    }
+    return fallback;
   }
 
-  private buildFavoriteItem(artifact: Artifact, groupName: string): FavoriteItem {
+  private readBoolean(record: RawRecord, keys: string[], fallback: boolean = false): boolean {
+    for (let index = 0; index < keys.length; index += 1) {
+      const value = record[keys[index]];
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'number') {
+        return value > 0;
+      }
+      if (typeof value === 'string') {
+        const normalized = value.toLowerCase();
+        if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+          return true;
+        }
+        if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+          return false;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  private toReviewStatus(value: RawValue): ReviewStatus {
+    if (typeof value === 'number') {
+      return value === 1 || value === 2 ? ReviewStatus.Approved : ReviewStatus.Pending;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.toUpperCase();
+      if (normalized === 'APPROVED' || normalized === 'PASS' || normalized === 'PASSED' || normalized === 'SUCCESS') {
+        return ReviewStatus.Approved;
+      }
+    }
+    return ReviewStatus.Pending;
+  }
+
+  private async getData<T>(url: string): Promise<T> {
+    const response = await HttpApi.get<ApiResponse<T>>(url);
+    if (response.code !== 200) {
+      throw new Error(response.message || '请求失败');
+    }
+    return response.data;
+  }
+
+  private async postData<T>(url: string, body: object): Promise<T> {
+    const response = await HttpApi.post<ApiResponse<T>>(url, body);
+    if (response.code !== 200) {
+      throw new Error(response.message || '请求失败');
+    }
+    return response.data;
+  }
+
+  private async deleteData<T>(url: string): Promise<T> {
+    const response = await HttpApi.delete<ApiResponse<T>>(url);
+    if (response.code !== 200) {
+      throw new Error(response.message || '请求失败');
+    }
+    return response.data;
+  }
+
+  private mapFavoriteItem(data: Object): FavoriteItem {
+    const record = this.readRecord(data);
     return {
-      artifactId: artifact.id,
-      title: artifact.title,
-      imageUrl: artifact.imageUrl,
-      period: artifact.period,
-      museum: artifact.museum,
-      groupName: groupName,
-      createdAt: new Date().toISOString()
+      artifactId: this.readString(record, ['artifactId', 'objectId'], ''),
+      title: this.readString(record, ['artifactTitle', 'title'], ''),
+      imageUrl: this.readString(record, ['imageUrl', 'artifactImageUrl', 'photoUrl'], ''),
+      period: this.readString(record, ['period'], ''),
+      museum: this.readString(record, ['museum', 'museumName'], ''),
+      groupName: this.readString(record, ['groupName'], this.getDefaultFavoriteGroup()),
+      createdAt: this.readString(record, ['createTime', 'createdAt'], new Date().toISOString())
     };
   }
 
-  private buildHistoryItem(artifact: Artifact): HistoryItem {
+  private mapLikeItem(data: Object): LikeItem {
+    const record = this.readRecord(data);
     return {
-      artifactId: artifact.id,
-      title: artifact.title,
-      imageUrl: artifact.imageUrl,
-      period: artifact.period,
-      museum: artifact.museum,
-      viewedAt: new Date().toISOString()
+      artifactId: this.readString(record, ['artifactId', 'objectId'], ''),
+      title: this.readString(record, ['artifactTitle', 'title'], ''),
+      imageUrl: this.readString(record, ['imageUrl', 'artifactImageUrl', 'photoUrl'], ''),
+      period: this.readString(record, ['period'], ''),
+      museum: this.readString(record, ['museum', 'museumName'], ''),
+      likedAt: this.readString(record, ['likedAt', 'createTime', 'createdAt'], new Date().toISOString())
     };
   }
 
-  // 新增：构建 LikeItem 快照
-  private buildLikeItem(artifact: Artifact): LikeItem {
+  private mapHistoryItem(data: Object): HistoryItem {
+    const record = this.readRecord(data);
     return {
-      artifactId: artifact.id,
-      title: artifact.title,
-      imageUrl: artifact.imageUrl,
-      period: artifact.period,
-      museum: artifact.museum,
-      likedAt: new Date().toISOString()
+      artifactId: this.readString(record, ['artifactId', 'objectId'], ''),
+      title: this.readString(record, ['artifactTitle', 'title'], ''),
+      imageUrl: this.readString(record, ['imageUrl', 'artifactImageUrl', 'photoUrl'], ''),
+      period: this.readString(record, ['period'], ''),
+      museum: this.readString(record, ['museum', 'museumName'], ''),
+      viewedAt: this.readString(record, ['viewTime', 'viewedAt', 'createTime', 'createdAt'], new Date().toISOString())
     };
   }
 
-  private async getCommentLikeMap(): Promise<Map<string, string[]>> {
-    const commentLikeObj = await this.getJsonValue<Record<string, string[]>>(this.commentLikeKey, {});
-    return this.objectToMap<string[]>(commentLikeObj);
+  private mapCommentItem(data: Object, fallbackArtifactId: string = ''): CommentItem {
+    const record = this.readRecord(data);
+    const commentId = this.readString(record, ['commentId', 'objectId', 'id'], '');
+    return {
+      id: commentId,
+      artifactId: this.readString(record, ['artifactId', 'artifactObjectId'], fallbackArtifactId),
+      artifactTitle: this.readString(record, ['artifactTitle', 'title'], ''),
+      username: this.readString(record, ['username', 'nickname', 'authorName'], ''),
+      content: this.readString(record, ['content', 'commentContent'], ''),
+      createdAt: this.readString(record, ['createTime', 'createdAt'], new Date().toISOString()),
+      status: this.toReviewStatus(record['status'] || record['reviewStatus'] || record['auditStatus']),
+      parentId: this.readString(record, ['parentId'], ''),
+      replyTo: this.readString(record, ['replyTo'], ''),
+      likeCount: this.readNumber(record, ['likeCount'], 0),
+      likedByCurrentUser: this.readBoolean(record, ['isLiked', 'likedByCurrentUser'], false)
+    };
   }
 
-  private async enrichComments(items: CommentItem[], username: string = ''): Promise<CommentItem[]> {
-    const likeMap = await this.getCommentLikeMap();
-    return items.map((item: CommentItem) => {
-      const users = likeMap.get(item.id) || [];
-      const enriched = this.cloneCommentItem(item);
-      enriched.likeCount = this.buildCommentBaseCount(item.id) + users.length;
-      enriched.likedByCurrentUser = username ? users.indexOf(username) > -1 : false;
-      return enriched;
-    });
+  private mapUploadItem(data: Object): UploadedPhotoItem {
+    const record = this.readRecord(data);
+    return {
+      id: this.readString(record, ['uploadId', 'objectId', 'id'], ''),
+      artifactId: this.readString(record, ['artifactId', 'objectId'], ''),
+      artifactTitle: this.readString(record, ['artifactTitle', 'title'], ''),
+      username: this.readString(record, ['username', 'nickname'], ''),
+      imageUri: this.readString(record, ['imageUrl', 'photoUrl', 'imagePath', 'imageUri'], ''),
+      location: this.readString(record, ['location'], ''),
+      description: this.readString(record, ['description'], ''),
+      createdAt: this.readString(record, ['createTime', 'createdAt'], new Date().toISOString()),
+      status: this.toReviewStatus(record['status'] || record['reviewStatus'] || record['auditStatus'])
+    };
+  }
+
+  private mapInteractionSummary(
+    data: RawValue,
+    activeKeys: string[],
+    countKeys: string[],
+    fallbackActive: boolean,
+    fallbackCount: number
+  ): InteractionSummary {
+    const record = this.readRecord(data);
+    return {
+      active: this.readBoolean(record, activeKeys, fallbackActive),
+      count: this.readNumber(record, countKeys, fallbackCount)
+    };
+  }
+
+  private updateLikeSummaryCache(username: string, artifactId: string, summary: InteractionSummary): void {
+    this.likeSummaryCache.set(this.buildArtifactCacheKey(username, artifactId), summary);
+  }
+
+  private updateFavoriteSummaryCache(username: string, artifactId: string, summary: InteractionSummary): void {
+    this.favoriteSummaryCache.set(this.buildArtifactCacheKey(username, artifactId), summary);
+  }
+
+  private async fetchFavoriteList(username: string): Promise<FavoriteItem[]> {
+    const data = await this.getData<RawValue>(`/users/${username}/favorites`);
+    return this.sortByDateDesc(
+      this.extractArray<Object>(data)
+        .map((item: Object) => this.mapFavoriteItem(item))
+        .filter((item: FavoriteItem) => !!item.artifactId)
+    );
+  }
+
+  private async fetchLikeList(username: string): Promise<LikeItem[]> {
+    const data = await this.getData<RawValue>(`/users/${username}/likes`);
+    return this.sortByDateDesc(
+      this.extractArray<Object>(data)
+        .map((item: Object) => this.mapLikeItem(item))
+        .filter((item: LikeItem) => !!item.artifactId)
+    );
+  }
+
+  private async fetchUserCommentList(username: string): Promise<CommentItem[]> {
+    const data = await this.getData<RawValue>(`/users/${username}/comments`);
+    return this.sortByDateDesc(
+      this.extractArray<Object>(data)
+        .map((item: Object) => this.mapCommentItem(item))
+        .filter((item: CommentItem) => !!item.id)
+    );
   }
 
   async getLikeSummary(artifactId: string, username: string = ''): Promise<InteractionSummary> {
-    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
-    const likeMap = this.objectToMap<string[]>(likeObj);
-    const users = likeMap.get(artifactId) || [];
-    return {
-      active: username ? users.indexOf(username) > -1 : false,
-      count: this.buildLikeBaseCount(artifactId) + users.length
-    };
+    const cacheKey = this.buildArtifactCacheKey(username, artifactId);
+    const cached = this.likeSummaryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    if (!username) {
+      const emptySummary: InteractionSummary = { active: false, count: 0 };
+      return emptySummary;
+    }
+
+    try {
+      const likes = await this.fetchLikeList(username);
+      const active = likes.some((item: LikeItem) => item.artifactId === artifactId);
+      const summary: InteractionSummary = {
+        active: active,
+        count: active ? 1 : 0
+      };
+      this.updateLikeSummaryCache(username, artifactId, summary);
+      return summary;
+    } catch (error) {
+      console.error(`[InteractionStore] getLikeSummary failed artifactId=${artifactId} ${JSON.stringify(error)}`);
+      const emptySummary: InteractionSummary = { active: false, count: 0 };
+      return emptySummary;
+    }
   }
 
-  // 修改后的 toggleLike，支持 artifact 参数
   async toggleLike(artifactId: string, username: string, artifact?: Artifact): Promise<InteractionSummary> {
-    // 1. 更新旧存储（文物→用户列表）
-    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
-    const likeMap = this.objectToMap<string[]>(likeObj);
-    const users = likeMap.get(artifactId) || [];
-    const existingIndex = users.indexOf(username);
-    if (existingIndex > -1) {
-      users.splice(existingIndex, 1);
+    if (!username) {
+      throw new Error('请先登录');
+    }
+
+    const current = await this.getLikeSummary(artifactId, username);
+    let nextSummary: InteractionSummary;
+
+    if (current.active) {
+      const data = await this.deleteData<RawValue>(`/artifacts/${artifactId}/likes`);
+      nextSummary = this.mapInteractionSummary(data, ['isLiked'], ['likeCount', 'count'], false, 0);
     } else {
-      users.unshift(username);
-    }
-    likeMap.set(artifactId, users);
-    await this.setJsonValue(this.likeKey, this.mapToObject(likeMap));
-
-    // 2. 更新新存储（用户→LikeItem[]），如果提供了 artifact 则同步快照
-    if (artifact) {
-      const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
-      const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
-      let userItems = likeItemsMap.get(username) || [];
-      if (existingIndex > -1) {
-        // 取消点赞，移除该文物快照
-        userItems = userItems.filter(item => item.artifactId !== artifactId);
-      } else {
-        // 点赞，插入快照
-        const newItem = this.buildLikeItem(artifact);
-        userItems = [newItem, ...userItems];
-      }
-      likeItemsMap.set(username, userItems);
-      await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
+      const body: EmptyRequestBody = {};
+      const data = await this.postData<RawValue>(`/artifacts/${artifactId}/likes`, body);
+      nextSummary = this.mapInteractionSummary(data, ['isLiked'], ['likeCount', 'count'], true, Math.max(current.count, 0) + 1);
     }
 
+    this.updateLikeSummaryCache(username, artifactId, nextSummary);
     await this.syncProfileStats(username);
-    return this.getLikeSummary(artifactId, username);
+    return nextSummary;
   }
 
-  // 新增：获取用户点赞文物列表
   async getLikes(username: string): Promise<LikeItem[]> {
     if (!username) {
       return [];
     }
-    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
-    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
-    return likeItemsMap.get(username) || [];
+
+    try {
+      return await this.fetchLikeList(username);
+    } catch (error) {
+      console.error(`[InteractionStore] getLikes failed username=${username} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
-  // 新增：取消点赞（无需 artifact 对象）
   async removeLike(artifactId: string, username: string): Promise<void> {
-    // 1. 更新旧存储（文物→用户列表）
-    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
-    const likeMap = this.objectToMap<string[]>(likeObj);
-    const users = likeMap.get(artifactId) || [];
-    const idx = users.indexOf(username);
-    if (idx > -1) {
-      users.splice(idx, 1);
-      likeMap.set(artifactId, users);
-      await this.setJsonValue(this.likeKey, this.mapToObject(likeMap));
+    if (!username) {
+      return;
     }
 
-    // 2. 从用户点赞快照中移除
-    const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
-    const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
-    let userItems = likeItemsMap.get(username) || [];
-    userItems = userItems.filter(item => item.artifactId !== artifactId);
-    likeItemsMap.set(username, userItems);
-    await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
-
-    // 3. 更新统计数据
+    const data = await this.deleteData<RawValue>(`/artifacts/${artifactId}/likes`);
+    const summary = this.mapInteractionSummary(data, ['isLiked'], ['likeCount', 'count'], false, 0);
+    this.updateLikeSummaryCache(username, artifactId, summary);
     await this.syncProfileStats(username);
   }
 
   async getFavoriteSummary(artifactId: string, username: string = ''): Promise<InteractionSummary> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const isActive = username
-      ? (favoriteMap.get(username) || []).some((item: FavoriteItem) => item.artifactId === artifactId)
-      : false;
-    let favoriteUsers = 0;
-    favoriteMap.forEach((list: FavoriteItem[]) => {
-      if (list.some((item: FavoriteItem) => item.artifactId === artifactId)) {
-        favoriteUsers += 1;
-      }
-    });
-    return {
-      active: isActive,
-      count: this.buildFavoriteBaseCount(artifactId) + favoriteUsers
-    };
+    const cacheKey = this.buildArtifactCacheKey(username, artifactId);
+    const cached = this.favoriteSummaryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    if (!username) {
+      const emptySummary: InteractionSummary = { active: false, count: 0 };
+      return emptySummary;
+    }
+
+    try {
+      const favorites = await this.fetchFavoriteList(username);
+      const active = favorites.some((item: FavoriteItem) => item.artifactId === artifactId);
+      const summary: InteractionSummary = {
+        active: active,
+        count: active ? 1 : 0
+      };
+      this.updateFavoriteSummaryCache(username, artifactId, summary);
+      return summary;
+    } catch (error) {
+      console.error(`[InteractionStore] getFavoriteSummary failed artifactId=${artifactId} ${JSON.stringify(error)}`);
+      const emptySummary: InteractionSummary = { active: false, count: 0 };
+      return emptySummary;
+    }
   }
 
   async toggleFavorite(
@@ -425,40 +511,57 @@ class InteractionStore {
     username: string,
     groupName: string = FAVORITE_GROUPS[0]
   ): Promise<InteractionSummary> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const list = favoriteMap.get(username) || [];
-    const existingIndex = list.findIndex((item: FavoriteItem) => item.artifactId === artifact.id);
-    if (existingIndex > -1) {
-      list.splice(existingIndex, 1);
+    if (!username) {
+      throw new Error('请先登录');
+    }
+
+    const current = await this.getFavoriteSummary(artifact.id, username);
+    let nextSummary: InteractionSummary;
+
+    if (current.active) {
+      const data = await this.deleteData<RawValue>(`/users/${username}/favorites/${artifact.id}`);
+      nextSummary = this.mapInteractionSummary(data, ['isFavorited'], ['favoriteCount', 'count'], false, 0);
     } else {
       const normalizedGroup = await this.normalizeFavoriteGroupForUser(username, groupName);
-      list.unshift(this.buildFavoriteItem(artifact, normalizedGroup));
+      const body: FavoriteRequestBody = {
+        artifactId: artifact.id,
+        groupName: normalizedGroup
+      };
+      const data = await this.postData<RawValue>(`/users/${username}/favorites`, body);
+      nextSummary = this.mapInteractionSummary(data, ['isFavorited'], ['favoriteCount', 'count'], true, 1);
     }
-    favoriteMap.set(username, list);
-    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+
+    this.updateFavoriteSummaryCache(username, artifact.id, nextSummary);
     await this.syncProfileStats(username);
-    return this.getFavoriteSummary(artifact.id, username);
+    return nextSummary;
   }
 
   async getFavorites(username: string): Promise<FavoriteItem[]> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const favorites = favoriteMap.get(username) || [];
-    const groups = await this.loadFavoriteGroups(username);
-    const fallbackGroup = groups.length > 0 ? groups[0] : this.getDefaultFavoriteGroup();
-    return favorites.map((item: FavoriteItem): FavoriteItem => {
-      const normalizedItem: FavoriteItem = {
-        artifactId: item.artifactId,
-        title: item.title,
-        imageUrl: item.imageUrl,
-        period: item.period,
-        museum: item.museum,
-        groupName: groups.indexOf(item.groupName) > -1 ? item.groupName : fallbackGroup,
-        createdAt: item.createdAt
-      };
-      return normalizedItem;
-    });
+    if (!username) {
+      return [];
+    }
+
+    try {
+      const favorites = await this.fetchFavoriteList(username);
+      const groups = await this.loadFavoriteGroups(username);
+      const fallbackGroup = groups.length > 0 ? groups[0] : this.getDefaultFavoriteGroup();
+      return favorites.map((item: FavoriteItem): FavoriteItem => {
+        const nextGroup = item.groupName ? item.groupName : fallbackGroup;
+        this.updateFavoriteSummaryCache(username, item.artifactId, { active: true, count: 1 });
+        return {
+          artifactId: item.artifactId,
+          title: item.title,
+          imageUrl: item.imageUrl,
+          period: item.period,
+          museum: item.museum,
+          groupName: groups.indexOf(nextGroup) > -1 ? nextGroup : fallbackGroup,
+          createdAt: item.createdAt
+        };
+      });
+    } catch (error) {
+      console.error(`[InteractionStore] getFavorites failed username=${username} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
   async getFavoriteGroups(username: string): Promise<string[]> {
@@ -482,30 +585,23 @@ class InteractionStore {
     if (!username || FAVORITE_GROUPS.indexOf(groupName) > -1) {
       return this.loadFavoriteGroups(username);
     }
+
+    const favorites = await this.getFavorites(username);
     const nextGroups = (await this.loadFavoriteGroups(username)).filter((item: string) => item !== groupName);
     const fallbackGroup = nextGroups.length > 0 ? nextGroups[0] : this.getDefaultFavoriteGroup();
+
+    for (let index = 0; index < favorites.length; index += 1) {
+      const favorite = favorites[index];
+      if (favorite.groupName === groupName) {
+        await this.moveFavoriteToGroup(favorite.artifactId, username, fallbackGroup);
+      }
+    }
+
     const groupObj = await this.getJsonValue<Record<string, string[]>>(this.favoriteGroupKey, {});
     const groupMap = this.objectToMap<string[]>(groupObj);
     const customGroups = nextGroups.filter((item: string) => FAVORITE_GROUPS.indexOf(item) === -1);
     groupMap.set(username, customGroups);
     await this.setJsonValue(this.favoriteGroupKey, this.mapToObject(groupMap));
-
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const favorites = (favoriteMap.get(username) || []).map((item: FavoriteItem): FavoriteItem => {
-      const nextItem: FavoriteItem = {
-        artifactId: item.artifactId,
-        title: item.title,
-        imageUrl: item.imageUrl,
-        period: item.period,
-        museum: item.museum,
-        groupName: item.groupName === groupName ? fallbackGroup : item.groupName,
-        createdAt: item.createdAt
-      };
-      return nextItem;
-    });
-    favoriteMap.set(username, favorites);
-    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
     await this.syncProfileStats(username);
     return this.loadFavoriteGroups(username);
   }
@@ -521,28 +617,28 @@ class InteractionStore {
     const favorites = await this.getFavorites(username);
     const groups = await this.loadFavoriteGroups(username);
     return groups.map((groupName: string): FavoriteGroupSummary => {
-      const summary: FavoriteGroupSummary = {
+      return {
         name: groupName,
         count: favorites.filter((item: FavoriteItem) => item.groupName === groupName).length,
         isDefault: FAVORITE_GROUPS.indexOf(groupName) > -1
       };
-      return summary;
     });
   }
 
   async moveFavoriteToGroup(artifactId: string, username: string, groupName: string): Promise<string> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    const favorites = favoriteMap.get(username) || [];
-    const target = favorites.find((item: FavoriteItem) => item.artifactId === artifactId);
-    if (!target) {
-      const groups = await this.loadFavoriteGroups(username);
-      return groups.length > 0 ? groups[0] : this.getDefaultFavoriteGroup();
+    if (!username) {
+      return this.getDefaultFavoriteGroup();
     }
-    target.groupName = await this.normalizeFavoriteGroupForUser(username, groupName);
-    favoriteMap.set(username, favorites);
-    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
-    return target.groupName;
+
+    const normalizedGroup = await this.normalizeFavoriteGroupForUser(username, groupName);
+    const body: FavoriteRequestBody = {
+      artifactId: artifactId,
+      groupName: normalizedGroup
+    };
+    await this.postData<RawValue>(`/users/${username}/favorites`, body);
+    const summary: InteractionSummary = { active: true, count: 1 };
+    this.updateFavoriteSummaryCache(username, artifactId, summary);
+    return normalizedGroup;
   }
 
   async cycleFavoriteGroup(artifactId: string, username: string): Promise<string> {
@@ -554,69 +650,88 @@ class InteractionStore {
   }
 
   async removeFavorite(artifactId: string, username: string): Promise<void> {
-    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
-    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
-    favoriteMap.set(username, (favoriteMap.get(username) || []).filter((item: FavoriteItem) => item.artifactId !== artifactId));
-    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    if (!username) {
+      return;
+    }
+
+    await this.deleteData<RawValue>(`/users/${username}/favorites/${artifactId}`);
+    this.updateFavoriteSummaryCache(username, artifactId, { active: false, count: 0 });
     await this.syncProfileStats(username);
   }
 
   async recordHistory(artifact: Artifact, username: string): Promise<void> {
-    if (!username) {
+    if (!username || !artifact || !artifact.id) {
       return;
     }
-    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
-    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
-    const currentHistory = historyMap.get(username) || [];
-    const filtered = currentHistory.filter((item: HistoryItem) => item.artifactId !== artifact.id);
-    filtered.unshift(this.buildHistoryItem(artifact));
-    historyMap.set(username, filtered.slice(0, MAX_HISTORY));
-    await this.setJsonValue(this.historyKey, this.mapToObject(historyMap));
+
+    try {
+      const body: HistoryRequestBody = {
+        artifactId: artifact.id
+      };
+      await this.postData<RawValue>(`/users/${username}/history`, body);
+    } catch (error) {
+      console.error(`[InteractionStore] recordHistory failed artifactId=${artifact.id} ${JSON.stringify(error)}`);
+    }
   }
 
   async getHistory(username: string): Promise<HistoryItem[]> {
-    const historyObj = await this.getJsonValue<Record<string, HistoryItem[]>>(this.historyKey, {});
-    const historyMap = this.objectToMap<HistoryItem[]>(historyObj);
-    return historyMap.get(username) || [];
+    if (!username) {
+      return [];
+    }
+
+    try {
+      const data = await this.getData<RawValue>(`/users/${username}/history`);
+      return this.sortByDateDesc(
+        this.extractArray<Object>(data)
+          .map((item: Object) => this.mapHistoryItem(item))
+          .filter((item: HistoryItem) => !!item.artifactId)
+      );
+    } catch (error) {
+      console.error(`[InteractionStore] getHistory failed username=${username} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
   async getCommentsForArtifact(artifactId: string, username: string = ''): Promise<CommentItem[]> {
-    const comments = await this.syncCommentReviewStatus(
-      await this.getJsonValue<CommentItem[]>(this.commentKey, [])
-    );
-    const current = comments.filter((item: CommentItem) => item.artifactId === artifactId);
-    const approved = current.filter((item: CommentItem) => item.status === ReviewStatus.Approved);
-    const ownPending = username
-      ? current.filter((item: CommentItem) => item.username === username && item.status !== ReviewStatus.Approved)
-      : [];
-    const merged = this.sortByDateDesc<CommentItem>([
-      ...this.getSeedComments(artifactId),
-      ...approved,
-      ...ownPending
-    ]);
-    return this.enrichComments(merged, username);
+    try {
+      const data = await this.getData<RawValue>(`/artifacts/${artifactId}/comments`);
+      const publicComments = this.extractArray<Object>(data)
+        .map((item: Object) => this.mapCommentItem(item, artifactId))
+        .filter((item: CommentItem) => !!item.id);
+
+      if (!username) {
+        return this.sortByDateDesc(publicComments);
+      }
+
+      const ownComments = (await this.getUserComments(username))
+        .filter((item: CommentItem) => item.artifactId === artifactId && item.status !== ReviewStatus.Approved);
+
+      const commentMap = new Map<string, CommentItem>();
+      publicComments.forEach((item: CommentItem) => commentMap.set(item.id, item));
+      ownComments.forEach((item: CommentItem) => commentMap.set(item.id, item));
+      return this.sortByDateDesc(Array.from(commentMap.values()));
+    } catch (error) {
+      console.error(`[InteractionStore] getCommentsForArtifact failed artifactId=${artifactId} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
   async getCommentLikeSummary(commentId: string, username: string = ''): Promise<InteractionSummary> {
-    const likeMap = await this.getCommentLikeMap();
-    const users = likeMap.get(commentId) || [];
     return {
-      active: username ? users.indexOf(username) > -1 : false,
-      count: this.buildCommentBaseCount(commentId) + users.length
+      active: false,
+      count: 0
     };
   }
 
   async toggleCommentLike(commentId: string, username: string): Promise<InteractionSummary> {
-    const likeMap = await this.getCommentLikeMap();
-    const users = likeMap.get(commentId) || [];
-    const existingIndex = users.indexOf(username);
-    if (existingIndex === -1) {
-      users.unshift(username);
+    if (!username) {
+      throw new Error('请先登录');
     }
-    likeMap.set(commentId, users);
-    await this.setJsonValue(this.commentLikeKey, this.mapToObject(likeMap));
+
+    const body: EmptyRequestBody = {};
+    const data = await this.postData<RawValue>(`/comments/${commentId}/likes`, body);
     await this.syncProfileStats(username);
-    return this.getCommentLikeSummary(commentId, username);
+    return this.mapInteractionSummary(data, ['isLiked'], ['likeCount', 'count'], true, 1);
   }
 
   async addComment(
@@ -639,61 +754,82 @@ class InteractionStore {
     if (BLOCKED_WORDS.some((word: string) => trimmed.indexOf(word) > -1)) {
       return { ok: false, message: '评论包含敏感词，请修改后再试' };
     }
+    if (!username) {
+      return { ok: false, message: '请先登录' };
+    }
 
-    const comments = await this.getJsonValue<CommentItem[]>(this.commentKey, []);
-    const record: CommentItem = {
-      id: `comment-${Date.now()}`,
-      artifactId: artifact.id,
-      artifactTitle: artifact.title,
-      username: username,
-      content: trimmed,
-      createdAt: new Date().toISOString(),
-      status: ReviewStatus.Pending
+    const body: CommentCreateRequestBody = {
+      content: trimmed
     };
     if (parentId) {
-      record.parentId = parentId;
+      body.parentId = parentId;
     }
     if (replyTo) {
-      record.replyTo = replyTo;
+      body.replyTo = replyTo;
     }
-    comments.unshift(record);
-    await this.setJsonValue(this.commentKey, comments);
-    await this.syncProfileStats(username);
-    return { ok: true, message: '评论已提交，等待审核' };
+
+    try {
+      await this.postData<RawValue>(`/artifacts/${artifact.id}/comments`, body as object);
+      await this.syncProfileStats(username);
+      return { ok: true, message: '评论已提交，等待审核' };
+    } catch (error) {
+      const err = error as Error;
+      return { ok: false, message: err.message || '评论提交失败' };
+    }
   }
 
   async getUserComments(username: string): Promise<CommentItem[]> {
-    const comments = await this.syncCommentReviewStatus(
-      await this.getJsonValue<CommentItem[]>(this.commentKey, [])
-    );
-    const current = this.sortByDateDesc<CommentItem>(
-      comments.filter((item: CommentItem) => item.username === username)
-    );
-    return this.enrichComments(current, username);
+    if (!username) {
+      return [];
+    }
+
+    try {
+      return await this.fetchUserCommentList(username);
+    } catch (error) {
+      console.error(`[InteractionStore] getUserComments failed username=${username} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
-  async addUpload(draft: UploadDraft): Promise<void> {
-    const uploads = await this.getJsonValue<UploadedPhotoItem[]>(this.uploadKey, []);
-    uploads.unshift({
-      id: `upload-${Date.now()}`,
-      artifactId: draft.artifactId,
-      artifactTitle: draft.artifactTitle,
-      username: draft.username,
-      imageUri: draft.imageUri,
-      location: draft.location.trim(),
-      description: draft.description.trim(),
-      createdAt: new Date().toISOString(),
-      status: ReviewStatus.Pending
-    });
-    await this.setJsonValue(this.uploadKey, uploads);
+  async addUpload(context: common.UIAbilityContext, draft: UploadDraft): Promise<void> {
+    if (!draft.username) {
+      throw new Error('请先登录');
+    }
+
+    const data: UploadFormField[] = [];
+    if (draft.location.trim()) {
+      data.push({ name: 'location', value: draft.location.trim() });
+    }
+    if (draft.description.trim()) {
+      data.push({ name: 'description', value: draft.description.trim() });
+    }
+
+    await HttpApi.uploadFile(
+      context,
+      `/artifacts/${draft.artifactId}/uploads`,
+      draft.imageUri,
+      'file',
+      data
+    );
     await this.syncProfileStats(draft.username);
   }
 
   async getUploads(username: string): Promise<UploadedPhotoItem[]> {
-    const uploads = await this.syncUploadReviewStatus(
-      await this.getJsonValue<UploadedPhotoItem[]>(this.uploadKey, [])
-    );
-    return uploads.filter((item: UploadedPhotoItem) => item.username === username);
+    if (!username) {
+      return [];
+    }
+
+    try {
+      const data = await this.getData<RawValue>(`/users/${username}/uploads`);
+      return this.sortByDateDesc(
+        this.extractArray<Object>(data)
+          .map((item: Object) => this.mapUploadItem(item))
+          .filter((item: UploadedPhotoItem) => !!item.id)
+      );
+    } catch (error) {
+      console.error(`[InteractionStore] getUploads failed username=${username} ${JSON.stringify(error)}`);
+      return [];
+    }
   }
 
   async getPrivacy(username: string): Promise<PrivacySettings> {
@@ -729,7 +865,7 @@ class InteractionStore {
 
   async savePrivacy(username: string, privacy: PrivacySettings): Promise<void> {
     if (!username) {
-      throw new Error('[InteractionStore] savePrivacy 失败：username 为空');
+      throw new Error('[InteractionStore] savePrivacy failed: username is empty');
     }
 
     const privacyObj = await this.getJsonValue<Record<string, PrivacySettings>>(this.privacyKey, {});
@@ -743,7 +879,6 @@ class InteractionStore {
     });
 
     await this.setJsonValue(this.privacyKey, this.mapToObject(privacyMap));
-    console.info(`[InteractionStore] 保存隐私设置成功 username=${username}, privacy=${JSON.stringify(privacy)}`);
   }
 
   async getStats(username: string): Promise<UserInteractionStats> {
@@ -751,24 +886,10 @@ class InteractionStore {
     const uploads = await this.getUploads(username);
     const comments = await this.getUserComments(username);
     const history = await this.getHistory(username);
-    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
-    const likeMap = this.objectToMap<string[]>(likeObj);
-    const commentLikeMap = await this.getCommentLikeMap();
-
-    let likes = 0;
-    likeMap.forEach((users: string[]) => {
-      if (users.indexOf(username) > -1) {
-        likes += 1;
-      }
-    });
-    commentLikeMap.forEach((users: string[]) => {
-      if (users.indexOf(username) > -1) {
-        likes += 1;
-      }
-    });
+    const likes = await this.getLikes(username);
 
     return {
-      likes: likes,
+      likes: likes.length,
       favorites: favorites.length,
       comments: comments.length,
       photos: uploads.length,

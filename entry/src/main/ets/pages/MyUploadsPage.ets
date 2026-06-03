@@ -1,3 +1,4 @@
+import common from '@ohos.app.ability.common';
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { ReviewStatus, UploadedPhotoItem } from '../common/models/InteractionModels';
@@ -239,17 +240,23 @@ export struct MyUploadsPage {
     if (!imageUri) {
       return;
     }
-    await interactionStore.addUpload({
-      artifactId: artifactId,
-      artifactTitle: artifactTitle,
-      username: this.username,
-      imageUri: imageUri,
-      location: this.draftLocation,
-      description: this.draftDescription
-    });
-    this.draftDescription = '';
-    promptAction.showToast({ message: '照片已上传，等待审核' });
-    await this.loadUploads();
-    this.scheduleReviewRefresh();
+    const context = getContext(this) as common.UIAbilityContext;
+    try {
+      await interactionStore.addUpload(context, {
+        artifactId: artifactId,
+        artifactTitle: artifactTitle,
+        username: this.username,
+        imageUri: imageUri,
+        location: this.draftLocation,
+        description: this.draftDescription
+      });
+      this.draftDescription = '';
+      promptAction.showToast({ message: 'Photo uploaded. Waiting for review' });
+      await this.loadUploads();
+      this.scheduleReviewRefresh();
+    } catch (error) {
+      const err = error as Error;
+      promptAction.showToast({ message: err.message || 'Upload failed' });
+    }
   }
 }

@@ -1,3 +1,4 @@
+import common from '@ohos.app.ability.common';
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { Artifact, mockArtifacts } from '../common/models/Artifact';
@@ -7,6 +8,7 @@ import {
   InteractionSummary,
   ReviewStatus
 } from '../common/models/InteractionModels';
+import { ArtifactApi } from '../common/services/ArtifactApi';
 import { interactionStore } from '../common/store/InteractionStore';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
 import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
@@ -24,6 +26,7 @@ export struct ArtifactDetailPage {
   @StorageLink('isLogin') isLogin: boolean = false;
   @StorageLink('username') username: string = '';
   @State artifact: Artifact | null = null;
+  @State isArtifactLoading: boolean = true;
   @State likeSummary: InteractionSummary = { active: false, count: 0 };
   @State favoriteSummary: InteractionSummary = { active: false, count: 0 };
   @State favoriteGroups: string[] = [];
@@ -65,17 +68,18 @@ export struct ArtifactDetailPage {
     const params = router.getParams() as Record<string, string>;
     const id = params ? (params['objectId'] || params['id']) : '';
     if (!id) {
+      this.isArtifactLoading = false;
       return;
     }
     this.artifactId = id;
-    const found = mockArtifacts.find((item: Artifact) => item.id === this.artifactId);
-    this.artifact = found || null;
-    if (!this.artifact) {
-      return;
-    }
-    this.allImageUrls = this.artifact.imageUrls && this.artifact.imageUrls.length > 0
-      ? this.artifact.imageUrls
-      : [this.artifact.imageUrl];
+    this.resetPageState();
+    this.loadArtifact();
+  }
+
+  private resetPageState() {
+    this.isArtifactLoading = true;
+    this.artifact = null;
+    this.allImageUrls = [];
     this.currentImageIndex = 0;
     this.scaleValue = 1;
     this.offsetX = 0;
@@ -93,7 +97,38 @@ export struct ArtifactDetailPage {
     this.showAllComments = false;
     this.replyTarget = null;
     this.uploadDescription = '';
-    this.uploadLocation = this.artifact.museum;
+    this.uploadLocation = '';
+    this.relatedEntities = [];
+    this.relatedList = [];
+    this.comments = [];
+    this.likeSummary = { active: false, count: 0 };
+    this.favoriteSummary = { active: false, count: 0 };
+  }
+
+  private async loadArtifact() {
+    const localArtifact = mockArtifacts.find((item: Artifact) => item.id === this.artifactId);
+    if (localArtifact) {
+      this.applyArtifact(localArtifact);
+      return;
+    }
+
+    try {
+      const remoteArtifact = await ArtifactApi.getArtifactDetail(this.artifactId);
+      this.applyArtifact(remoteArtifact);
+    } catch (error) {
+      console.error(`[ArtifactDetailPage] loadArtifact failed artifactId=${this.artifactId} ${JSON.stringify(error)}`);
+      this.isArtifactLoading = false;
+      this.showToast('加载文物详情失败');
+    }
+  }
+
+  private applyArtifact(artifact: Artifact) {
+    this.artifact = artifact;
+    this.allImageUrls = artifact.imageUrls && artifact.imageUrls.length > 0
+      ? artifact.imageUrls
+      : [artifact.imageUrl];
+    this.uploadLocation = artifact.museum;
+    this.isArtifactLoading = false;
     this.loadRelatedData();
     this.initInteractionData();
   }
@@ -194,7 +229,18 @@ export struct ArtifactDetailPage {
 
   build() {
     Column() {
-      if (this.artifact) {
+      if (this.isArtifactLoading) {
+        Column() {
+          LoadingProgress()
+            .width(40)
+            .height(40)
+            .color('#C05040')
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else if (this.artifact) {
         Scroll() {
           Column() {
             this.ImageSection()
@@ -1211,12 +1257,18 @@ export struct ArtifactDetailPage {
       return;
     }
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再点赞');
+      this.showToast('Please log in before liking');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    this.likeSummary = await interactionStore.toggleLike(this.artifact.id, this.username, this.artifact);
-    this.showToast(this.likeSummary.active ? '已点赞' : '已取消点赞');
+
+    try {
+      this.likeSummary = await interactionStore.toggleLike(this.artifact.id, this.username, this.artifact);
+      this.showToast(this.likeSummary.active ? 'Liked' : 'Like removed');
+    } catch (error) {
+      const err = error as Error;
+      this.showToast(err.message || 'Like failed');
+    }
   }
 
   private async handleToggleFavorite() {
@@ -1224,17 +1276,23 @@ export struct ArtifactDetailPage {
       return;
     }
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再收藏');
+      this.showToast('Please log in before favoriting');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    this.favoriteSummary = await interactionStore.toggleFavorite(this.artifact, this.username, this.selectedFavoriteGroup);
-    if (this.favoriteSummary.active) {
-      this.showToast(`已加入“${this.selectedFavoriteGroup}”`);
-    } else {
-      this.showToast('已取消收藏');
+
+    try {
+      this.favoriteSummary = await interactionStore.toggleFavorite(this.artifact, this.username, this.selectedFavoriteGroup);
+      if (this.favoriteSummary.active) {
+        this.showToast(`Added to ${this.selectedFavoriteGroup}`);
+      } else {
+        this.showToast('Favorite removed');
+      }
+      await this.refreshInteractionState();
+    } catch (error) {
+      const err = error as Error;
+      this.showToast(err.message || 'Favorite failed');
     }
-    await this.refreshInteractionState();
   }
 
   private async handleFavoriteGroupSelect(groupName: string) {
@@ -1242,14 +1300,20 @@ export struct ArtifactDetailPage {
     if (!this.favoriteSummary.active || !this.artifact || !this.isLogin || !this.username) {
       return;
     }
-    await interactionStore.moveFavoriteToGroup(this.artifact.id, this.username, groupName);
-    this.showToast(`已移动到“${groupName}”`);
-    await this.refreshInteractionState();
+
+    try {
+      await interactionStore.moveFavoriteToGroup(this.artifact.id, this.username, groupName);
+      this.showToast(`Moved to ${groupName}`);
+      await this.refreshInteractionState();
+    } catch (error) {
+      const err = error as Error;
+      this.showToast(err.message || 'Move failed');
+    }
   }
 
   private prepareReply(item: CommentItem) {
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再回复评论');
+      this.showToast('Please log in before replying');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
@@ -1259,42 +1323,48 @@ export struct ArtifactDetailPage {
 
   private async handleToggleCommentLike(item: CommentItem) {
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再点赞评论');
+      this.showToast('Please log in before liking comments');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
     if (item.likedByCurrentUser) {
-      this.showToast('你已经点赞过这条评论了');
+      this.showToast('You already liked this comment');
       return;
     }
-    const summary = await interactionStore.toggleCommentLike(item.id, this.username);
-    this.comments = this.comments.map((comment: CommentItem) => {
-      if (comment.id !== item.id) {
-        return comment;
+
+    try {
+      const summary = await interactionStore.toggleCommentLike(item.id, this.username);
+      this.comments = this.comments.map((comment: CommentItem) => {
+        if (comment.id !== item.id) {
+          return comment;
+        }
+        const nextComment: CommentItem = {
+          id: comment.id,
+          artifactId: comment.artifactId,
+          artifactTitle: comment.artifactTitle,
+          username: comment.username,
+          content: comment.content,
+          createdAt: comment.createdAt,
+          status: comment.status,
+          likeCount: summary.count,
+          likedByCurrentUser: summary.active
+        };
+        if (comment.parentId) {
+          nextComment.parentId = comment.parentId;
+        }
+        if (comment.replyTo) {
+          nextComment.replyTo = comment.replyTo;
+        }
+        return nextComment;
+      });
+      if (this.artifact) {
+        this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id, this.username);
       }
-      const nextComment: CommentItem = {
-        id: comment.id,
-        artifactId: comment.artifactId,
-        artifactTitle: comment.artifactTitle,
-        username: comment.username,
-        content: comment.content,
-        createdAt: comment.createdAt,
-        status: comment.status,
-        likeCount: summary.count,
-        likedByCurrentUser: summary.active
-      };
-      if (comment.parentId) {
-        nextComment.parentId = comment.parentId;
-      }
-      if (comment.replyTo) {
-        nextComment.replyTo = comment.replyTo;
-      }
-      return nextComment;
-    });
-    if (this.artifact) {
-      this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id, this.username);
+      this.showToast('Comment liked');
+    } catch (error) {
+      const err = error as Error;
+      this.showToast(err.message || 'Comment like failed');
     }
-    this.showToast('已点赞评论');
   }
 
   private async handleSubmitComment() {
@@ -1302,7 +1372,7 @@ export struct ArtifactDetailPage {
       return;
     }
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再评论');
+      this.showToast('Please log in before commenting');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
@@ -1332,7 +1402,7 @@ export struct ArtifactDetailPage {
       return;
     }
     if (!this.isLogin || !this.username) {
-      this.showToast('请先登录后再上传照片');
+      this.showToast('Please log in before uploading photos');
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
@@ -1345,16 +1415,23 @@ export struct ArtifactDetailPage {
     if (!imageUri) {
       return;
     }
-    await interactionStore.addUpload({
-      artifactId: this.artifact.id,
-      artifactTitle: this.artifact.title,
-      username: this.username,
-      imageUri: imageUri,
-      location: this.uploadLocation.trim() || this.artifact.museum,
-      description: this.uploadDescription.trim()
-    });
-    this.uploadDescription = '';
-    this.showToast('照片已上传，等待审核');
+
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      await interactionStore.addUpload(context, {
+        artifactId: this.artifact.id,
+        artifactTitle: this.artifact.title,
+        username: this.username,
+        imageUri: imageUri,
+        location: this.uploadLocation.trim() || this.artifact.museum,
+        description: this.uploadDescription.trim()
+      });
+      this.uploadDescription = '';
+      this.showToast('Photo uploaded. Waiting for review');
+    } catch (error) {
+      const err = error as Error;
+      this.showToast(err.message || 'Upload failed');
+    }
   }
 
   private showToast(message: string) {
