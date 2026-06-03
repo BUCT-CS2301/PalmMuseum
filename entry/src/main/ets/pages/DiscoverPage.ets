@@ -35,6 +35,7 @@ export struct DiscoverPage {
   @State selectedImage: string = '';
   // 是否正在搜索（加载状态）
   @State isSearching: boolean = false;
+  @State isVoiceSearching: boolean = false;
 
   /**
    * 申请拍照 / 相册权限
@@ -380,7 +381,7 @@ export struct DiscoverPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      TextInput({ placeholder: '请输入或说出文物名称、年代、类型...' })
+      TextInput({ placeholder: '请输入或说出文物名称、年代、类型...', text: this.searchInput })
         .width('100%')
         .height(48)
         .backgroundColor('#FFFFFF')
@@ -394,38 +395,48 @@ export struct DiscoverPage {
         })
 
       Row({ space: 10 }) {
-        Button('文字搜索')
+        Button(this.isVoiceSearching ? '搜索中...' : '文字搜索')
           .layoutWeight(1)
           .height(46)
           .fontSize(15)
           .backgroundColor('#C05243')
           .fontColor(Color.White)
           .borderRadius(18)
-          .onClick(() => {
+          .enabled(!this.isVoiceSearching)
+          .onClick(async () => {
             if (!this.searchInput.trim()) {
               promptAction.showToast({ message: '请输入搜索内容' });
               return;
             }
             this.voiceText = this.searchInput;
-            MuseumVoiceService.handleVoiceSearch(this.searchInput);
+            this.isVoiceSearching = true;
+            try {
+              await MuseumVoiceService.handleVoiceSearch(this.searchInput);
+            } finally {
+              this.isVoiceSearching = false;
+            }
           })
 
-        Button('开始识别')
+        Button(this.isVoiceSearching ? '识别中...' : '开始识别')
           .layoutWeight(1)
           .height(46)
           .fontSize(15)
           .backgroundColor('#9A7A5C')
           .fontColor(Color.White)
           .borderRadius(18)
+          .enabled(!this.isVoiceSearching)
           .onClick(async () => {
             const hasPermission = await this.requestMicrophonePermission();
             if (!hasPermission) {
               return;
             }
             promptAction.showToast({ message: '请说出文物关键词' });
+            this.isVoiceSearching = true;
             MuseumVoiceService.startVoiceSearch((text: string) => {
               this.voiceText = text;
               this.searchInput = text;
+            }, () => {
+              this.isVoiceSearching = false;
             });
           })
       }
@@ -440,6 +451,7 @@ export struct DiscoverPage {
         .borderRadius(16)
         .onClick(() => {
           MuseumVoiceService.finishVoiceSearch();
+          this.isVoiceSearching = false;
         })
 
       if (this.voiceText) {

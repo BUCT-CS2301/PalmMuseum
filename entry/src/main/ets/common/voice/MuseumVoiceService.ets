@@ -3,6 +3,7 @@ import router from '@ohos.router';
 import { textToSpeech, speechRecognizer } from '@kit.CoreSpeechKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Artifact, mockArtifacts } from '../models/Artifact';
+import { ArtifactSearchParams, ArtifactSearchResult, MuseumArtifactApi } from '../network/MuseumArtifactApi';
 import { QaChatAnswer, QaChatCallbacks, QaChatService } from '../services/QaChatService';
 
 export class MuseumVoiceService {
@@ -310,6 +311,53 @@ ${artifact.description}`;
   }
 
   /**
+   * 根据语音 / 文字关键词从真实后端搜索文物，失败时回退到本地 mock 数据。
+   */
+  private static async searchArtifactByRemoteText(text: string): Promise<Artifact | null> {
+    let keyword = MuseumVoiceService.normalizeSearchText(text);
+
+    if (keyword.length === 0) {
+      return null;
+    }
+
+    try {
+      const keywordResult: ArtifactSearchResult = await MuseumArtifactApi.searchArtifacts({
+        keyword: keyword,
+        page: 1,
+        size: 1
+      });
+
+      if (keywordResult.items.length > 0) {
+        return keywordResult.items[0];
+      }
+
+      const filterAttempts: ArtifactSearchParams[] = [
+        { period: keyword, page: 1, size: 1 },
+        { type: keyword, page: 1, size: 1 },
+        { material: keyword, page: 1, size: 1 },
+        { museum: keyword, page: 1, size: 1 }
+      ];
+
+      for (let params of filterAttempts) {
+        const result: ArtifactSearchResult = await MuseumArtifactApi.searchArtifacts(params);
+        if (result.items.length > 0) {
+          return result.items[0];
+        }
+      }
+    } catch (error) {
+      console.error('[MuseumVoiceService] 后端文物搜索失败，回退本地数据：' + JSON.stringify(error));
+    }
+
+    return MuseumVoiceService.searchArtifactByText(keyword);
+  }
+
+  private static speakFeedback(text: string): void {
+    MuseumVoiceService.speak(text).catch((error: Error) => {
+      console.error('[MuseumVoiceService] 搜索反馈播报失败：' + JSON.stringify(error));
+    });
+  }
+
+  /**
    * 清洗语音搜索文字
    * 比如“帮我找青铜器”会处理成“青铜器”
    */
@@ -334,20 +382,30 @@ ${artifact.description}`;
   /**
    * 处理语音搜索
    */
-  static handleVoiceSearch(text: string): void {
-    let artifact = MuseumVoiceService.searchArtifactByText(text);
+  static async handleVoiceSearch(text: string): Promise<Artifact | null> {
+    let keyword = MuseumVoiceService.normalizeSearchText(text);
+
+    if (keyword.length === 0) {
+      promptAction.showToast({ message: '请输入或说出搜索关键词' });
+      return null;
+    }
+
+    let artifact = await MuseumVoiceService.searchArtifactByRemoteText(text);
 
     if (artifact) {
-      MuseumVoiceService.speak(`已为你找到${artifact.title}`);
+      MuseumVoiceService.speakFeedback(`已为你找到${artifact.title}`);
 
       router.pushUrl({
         url: 'pages/ArtifactDetailPage',
         params: {
+          objectId: artifact.id,
           id: artifact.id
         }
       });
+      return artifact;
     } else {
-      MuseumVoiceService.speak('没有找到相关文物，请换一个关键词试试');
+      MuseumVoiceService.speakFeedback('没有找到相关文物，请换一个关键词试试');
+      return null;
     }
   }
 
@@ -443,7 +501,10 @@ ${artifact.description}`;
   /**
    * 开始语音搜索：说出关键词，然后自动搜索文物
    */
-  static async startVoiceSearch(onText: (text: string) => void): Promise<void> {
+  static async startVoiceSearch(
+    onText: (text: string) => void,
+    onComplete?: () => void
+  ): Promise<void> {
     try {
       let engine = await MuseumVoiceService.getAsrEngine();
 
@@ -470,16 +531,27 @@ ${artifact.description}`;
           }
 
           onText(text);
+          try {
+            engine.finish(sessionId);
+          } catch (error) {
+            console.info('[MuseumVoiceService] 自动结束语音搜索失败，可忽略：' + JSON.stringify(error));
+          }
           MuseumVoiceService.handleVoiceSearch(text);
         },
 
         onComplete(sessionId: string, eventMessage: string) {
           console.info('[MuseumVoiceService] ASR完成：' + sessionId + ', ' + eventMessage);
+          if (onComplete) {
+            onComplete();
+          }
         },
 
         onError(sessionId: string, errorCode: number, errorMessage: string) {
           console.error('[MuseumVoiceService] ASR错误：' + sessionId + ', ' + errorCode + ', ' + errorMessage);
           promptAction.showToast({ message: '语音识别失败：' + errorMessage });
+          if (onComplete) {
+            onComplete();
+          }
         }
       };
 
@@ -505,6 +577,9 @@ ${artifact.description}`;
     } catch (error) {
       console.error('[MuseumVoiceService] 启动语音搜索失败：' + JSON.stringify(error));
       promptAction.showToast({ message: '启动语音搜索失败，请使用真机调试' });
+      if (onComplete) {
+        onComplete();
+      }
     }
   }
 
