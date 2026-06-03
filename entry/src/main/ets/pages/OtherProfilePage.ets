@@ -23,6 +23,7 @@ export struct OtherProfilePage {
   @State currentUsername: string = AppStorage.Get('username') as string || '';
   @State isSelf: boolean = false;
   @State isLoading: boolean = true;
+  @State avatarLoadFailed: boolean = false;
 
   @State profile: PublicUserProfile = {
     userId: '',
@@ -63,39 +64,6 @@ export struct OtherProfilePage {
       promptAction.showToast({ message: '用户不存在' });
       router.back();
     }
-  }
-
-  private async loadData(): Promise<void> {
-    this.isLoading = true;
-
-    try {
-      const data: PublicHomepageData = await PublicHomepageService.getPublicHomepage(
-        this.username,
-        this.currentUsername
-      );
-
-      this.profile = data.profile;
-      this.privacy = data.privacy;
-      this.visible = data.visible;
-      this.favorites = data.favorites;
-      this.likes = data.likes;
-      this.comments = data.comments;
-      this.photos = data.uploads;
-
-      console.info(`[OtherProfilePage] 加载主页成功 username=${this.username}`);
-    } catch (error) {
-      console.error(`[OtherProfilePage] 加载用户主页失败 ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '加载失败' });
-    } finally {
-      this.isLoading = false;
-    }
-  }
-
-  private getSafeImageUrl(imageUrl: string): ResourceStr {
-    if (imageUrl && imageUrl.trim().length > 0) {
-      return imageUrl;
-    }
-    return $r('app.media.startIcon');
   }
 
   build() {
@@ -189,24 +157,33 @@ export struct OtherProfilePage {
   @Builder
   ProfileHeader() {
     Column() {
-      if (this.profile.avatar && this.profile.avatar.trim().length > 0) {
-        Image(this.getSafeImageUrl(this.profile.avatar))
+      if (this.getAvatarUrl().length > 0 && !this.avatarLoadFailed) {
+        Image(this.getAvatarUrl())
           .width(80)
           .height(80)
           .borderRadius(40)
           .objectFit(ImageFit.Cover)
           .backgroundColor('#E0D5C6')
           .alt($r('app.media.startIcon'))
+          .onError(() => {
+            console.error(`[OtherProfilePage] 头像加载失败 url=${this.getAvatarUrl()}`);
+            this.avatarLoadFailed = true;
+          })
       } else {
-        Image($r('app.media.startIcon'))
-          .width(80)
-          .height(80)
-          .borderRadius(40)
-          .objectFit(ImageFit.Cover)
-          .backgroundColor('#E0D5C6')
+        Stack() {
+          Circle({ width: 80, height: 80 })
+            .fill('#E0D5C6')
+
+          Text(this.getInitial())
+            .fontSize(30)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFFFFF')
+        }
+        .width(80)
+        .height(80)
       }
 
-      Text(this.profile.nickname || this.profile.username)
+      Text(this.getDisplayName())
         .fontSize(20)
         .fontWeight(FontWeight.Medium)
         .fontColor('#3A3A3A')
@@ -477,5 +454,70 @@ export struct OtherProfilePage {
     .padding(12)
     .backgroundColor('#F2EDE8')
     .borderRadius(12)
+  }
+
+  private async loadData(): Promise<void> {
+    this.isLoading = true;
+
+    try {
+      const data: PublicHomepageData = await PublicHomepageService.getPublicHomepage(
+        this.username,
+        this.currentUsername
+      );
+
+      this.profile = data.profile;
+      this.avatarLoadFailed = false;
+      this.privacy = data.privacy;
+      this.visible = data.visible;
+      this.favorites = data.favorites;
+      this.likes = data.likes;
+      this.comments = data.comments;
+      this.photos = data.uploads;
+
+      console.info(`[OtherProfilePage] 加载主页成功 username=${this.username}`);
+    } catch (error) {
+      console.error(`[OtherProfilePage] 加载用户主页失败 ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '加载失败' });
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  private getSafeImageUrl(imageUrl: string): ResourceStr {
+    if (imageUrl && imageUrl.trim().length > 0) {
+      return imageUrl;
+    }
+
+    return $r('app.media.startIcon');
+  }
+
+  private getDisplayName(): string {
+    if (this.profile.nickname && this.profile.nickname.trim().length > 0) {
+      return this.profile.nickname;
+    }
+
+    if (this.profile.username && this.profile.username.trim().length > 0) {
+      return this.profile.username;
+    }
+
+    return '掌上博物馆用户';
+  }
+
+  private getInitial(): string {
+    const name: string = this.getDisplayName();
+
+    if (name.length > 0) {
+      return name.charAt(0).toUpperCase();
+    }
+
+    return '他';
+  }
+
+  private getAvatarUrl(): string {
+    if (this.profile.avatar && this.profile.avatar.trim().length > 0) {
+      return this.profile.avatar;
+    }
+
+    return '';
   }
 }
