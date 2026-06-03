@@ -215,10 +215,23 @@ export struct EditProfilePage {
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
         }
+
+        if (this.isUploadingAvatar) {
+          Circle({ width: 92, height: 92 })
+            .fill('#66000000')
+
+          LoadingProgress()
+            .width(30)
+            .height(30)
+            .color('#FFFFFF')
+        }
       }
       .width(92)
       .height(92)
       .margin({ top: 18, bottom: 8 })
+      .onClick(() => {
+        this.chooseAndUploadAvatar();
+      })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
@@ -239,7 +252,7 @@ export struct EditProfilePage {
       this.phone = profile.phone || '';
       this.email = profile.email || '';
 
-      console.info(`[EditProfilePage] 加载资料成功 username=${this.username}, nickname=${this.nickname}, bio=${this.bio}, phone=${this.phone}, email=${this.email}`);
+      console.info(`[EditProfilePage] 加载资料成功 username=${this.username}, nickname=${this.nickname}, avatar=${this.avatar}`);
     } catch (error) {
       console.error(`[EditProfilePage] 加载资料失败 ${JSON.stringify(error)}`);
 
@@ -273,8 +286,6 @@ export struct EditProfilePage {
 
       const context = getContext(this) as common.UIAbilityContext;
 
-      // 真机上相册 URI 不能直接 fs.openSync 读取；
-      // 先复制到 App cache，再读取 cachePath 转 base64。
       const cachePath: string = FileCacheUtil.copyImageToCachePath(context, pickedUri);
 
       console.info(`[EditProfilePage] pickedUri=${pickedUri}`);
@@ -294,6 +305,7 @@ export struct EditProfilePage {
       if (avatarUrl && avatarUrl.length > 0) {
         this.avatar = avatarUrl;
         this.avatarLoadFailed = false;
+
         AppStorage.SetOrCreate('avatar', avatarUrl);
       }
 

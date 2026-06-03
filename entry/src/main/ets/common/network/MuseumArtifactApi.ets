@@ -1,5 +1,6 @@
 // common/network/MuseumArtifactApi.ets
 // 文物模块专用 API。只给 HomePage / ShowPage / ArtifactDetailPage 使用，不影响公共 HttpApi.ets。
+// 本版新增：搜索列表按“文物核心信息”合并同一文物的多张图片，避免后端不同 objectId 的多图被渲染成多个卡片。
 
 import http from '@ohos.net.http';
 import { Artifact } from '../models/Artifact';
@@ -43,6 +44,7 @@ export interface ArtifactSearchItem {
   material: string;
   museum: string;
   imageUrl: string;
+  imageUrls?: string[];
   popularity?: number;
 }
 
@@ -202,16 +204,35 @@ export class MuseumArtifactApi {
     MuseumArtifactApi.appendQuery(parts, 'material', params.material);
     MuseumArtifactApi.appendQuery(parts, 'museum', params.museum);
 
-    // sortBy 是页面前端排序字段，不传给后端。
+    // sortBy 是页面前端排序字段，不传给后端，避免后端不支持参数导致空数据。
     if (parts.length === 0) {
       return MuseumArtifactApi.SEARCH_URL;
     }
     return `${MuseumArtifactApi.SEARCH_URL}?${parts.join('&')}`;
   }
 
+  private static normalizeImageUrls(imageUrl?: string, imageUrls?: string[]): string[] {
+    const urls: string[] = [];
+
+    if (imageUrls && imageUrls.length > 0) {
+      imageUrls.forEach((url: string) => {
+        if (url && url.length > 0 && urls.indexOf(url) === -1) {
+          urls.push(url);
+        }
+      });
+    }
+
+    if (imageUrl && imageUrl.length > 0 && urls.indexOf(imageUrl) === -1) {
+      urls.push(imageUrl);
+    }
+
+    return urls;
+  }
+
   private static toArtifact(item: ArtifactSearchItem | ArtifactDetailItem): Artifact {
-    const imageUrls = (item as ArtifactDetailItem).imageUrls;
-    const description = (item as ArtifactDetailItem).description;
+    const detailItem = item as ArtifactDetailItem;
+    const searchItem = item as ArtifactSearchItem;
+    const urls: string[] = MuseumArtifactApi.normalizeImageUrls(item.imageUrl, searchItem.imageUrls || detailItem.imageUrls);
 
     return {
       id: item.objectId,
@@ -220,11 +241,104 @@ export class MuseumArtifactApi {
       type: item.type || 'unknown',
       material: item.material || 'unknown',
       museum: item.museum || 'unknown',
-      imageUrl: item.imageUrl || '',
-      imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : [item.imageUrl || ''],
-      description: description || '暂无介绍',
+      imageUrl: urls.length > 0 ? urls[0] : '',
+      imageUrls: urls,
+      description: detailItem.description || '暂无介绍',
       popularity: item.popularity || 0
     } as Artifact;
+  }
+
+  private static addImageUrls(target: string[], urls?: string[]): void {
+    if (!urls || urls.length === 0) {
+      return;
+    }
+    urls.forEach((url: string) => {
+      if (url && url.length > 0 && target.indexOf(url) === -1) {
+        target.push(url);
+      }
+    });
+  }
+
+  private static normalizeText(value?: string): string {
+    if (!value) {
+      return '';
+    }
+    return value.replace(/\s+/g, '').trim();
+  }
+
+  /**
+   * 生成合并 key。
+   *
+   * 注意：你之前替换后“没有变化”，说明后端很可能把同一件文物的不同图片给了不同 objectId。
+   * 所以这里不能只按 objectId 合并，而是按文物核心信息合并：
+   * title + period + type + material + museum。
+   *
+   * 这样搜索列表中“同名、同年代、同类别、同材质、同博物馆”的记录会合成一件文物，
+   * 多张图片进入 imageUrls，列表只显示一张卡片。
+   */
+  private static buildMergeKey(item: Artifact): string {
+    const title: string = MuseumArtifactApi.normalizeText(item.title);
+    const period: string = MuseumArtifactApi.normalizeText(item.period);
+    const type: string = MuseumArtifactApi.normalizeText(item.type);
+    const material: string = MuseumArtifactApi.normalizeText(item.material);
+    const museum: string = MuseumArtifactApi.normalizeText(item.museum);
+
+    const key: string = `${title}|${period}|${type}|${material}|${museum}`;
+    if (key.replace(/\|/g, '').length > 0) {
+      return key;
+    }
+
+    return item.id || '';
+  }
+
+  /**
+   * 合并搜索结果里的同一文物多图。
+   * 这里使用 buildMergeKey，而不是只用 objectId。
+   */
+  private static mergeSameArtifacts(list: Artifact[]): Artifact[] {
+    const map: Map<string, Artifact> = new Map<string, Artifact>();
+
+    list.forEach((item: Artifact) => {
+      const key: string = MuseumArtifactApi.buildMergeKey(item);
+      if (!key || key.length === 0) {
+        return;
+      }
+
+      const oldItem: Artifact | undefined = map.get(key);
+      if (!oldItem) {
+        const urls: string[] = [];
+        MuseumArtifactApi.addImageUrls(urls, item.imageUrls);
+        MuseumArtifactApi.addImageUrls(urls, item.imageUrl ? [item.imageUrl] : []);
+        item.imageUrls = urls;
+        item.imageUrl = urls.length > 0 ? urls[0] : item.imageUrl;
+        map.set(key, item);
+        return;
+      }
+
+      const oldUrls: string[] = oldItem.imageUrls ? oldItem.imageUrls : [];
+      MuseumArtifactApi.addImageUrls(oldUrls, item.imageUrls);
+      MuseumArtifactApi.addImageUrls(oldUrls, item.imageUrl ? [item.imageUrl] : []);
+      oldItem.imageUrls = oldUrls;
+      oldItem.imageUrl = oldUrls.length > 0 ? oldUrls[0] : oldItem.imageUrl;
+
+      // 保留较高热度。
+      if ((item.popularity || 0) > (oldItem.popularity || 0)) {
+        oldItem.popularity = item.popularity;
+      }
+
+      // 如果旧记录缺少介绍，而新记录有介绍，则补上。
+      if ((!oldItem.description || oldItem.description === '暂无介绍') && item.description && item.description !== '暂无介绍') {
+        oldItem.description = item.description;
+      }
+
+      map.set(key, oldItem);
+    });
+
+    const merged: Artifact[] = [];
+    map.forEach((value: Artifact) => {
+      merged.push(value);
+    });
+    return merged;
   }
 
   private static pushUnique(list: string[], value?: string): void {
@@ -239,11 +353,19 @@ export class MuseumArtifactApi {
     );
 
     const data = resp.data;
+    const rawItems: Artifact[] = data && data.items
+      ? data.items.map((item: ArtifactSearchItem) => MuseumArtifactApi.toArtifact(item))
+      : [];
+    const mergedItems: Artifact[] = MuseumArtifactApi.mergeSameArtifacts(rawItems);
+
+    console.info(`[MuseumArtifactApi] search raw=${rawItems.length}, merged=${mergedItems.length}`);
+
     return {
-      total: data && data.total ? data.total : 0,
+      // total 保留后端 total，避免分页“加载更多”被错误截断。
+      total: data && data.total ? data.total : mergedItems.length,
       page: data && data.page ? data.page : (params.page || 1),
       size: data && data.size ? data.size : (params.size || 10),
-      items: data && data.items ? data.items.map((item: ArtifactSearchItem) => MuseumArtifactApi.toArtifact(item)) : []
+      items: mergedItems
     };
   }
 
