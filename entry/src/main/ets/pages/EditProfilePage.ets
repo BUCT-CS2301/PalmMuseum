@@ -4,6 +4,8 @@ import promptAction from '@ohos.promptAction';
 import common from '@ohos.app.ability.common';
 import { UserService, UserProfile } from '../common/services/UserService';
 import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
+import { ImageBase64Util, ImageBase64Data } from '../common/utils/ImageBase64Util';
+import { FileCacheUtil } from '../common/utils/FileCacheUtil';
 
 @Entry
 @Component
@@ -18,6 +20,7 @@ export struct EditProfilePage {
   @State email: string = '';
   @State isLoading: boolean = false;
   @State isUploadingAvatar: boolean = false;
+  @State avatarLoadFailed: boolean = false;
 
   aboutToAppear() {
     this.loadProfile();
@@ -191,7 +194,7 @@ export struct EditProfilePage {
   AvatarArea() {
     Column() {
       Stack() {
-        if (this.avatar && this.avatar.trim().length > 0) {
+        if (this.avatar && this.avatar.trim().length > 0 && !this.avatarLoadFailed) {
           Image(this.avatar)
             .width(92)
             .height(92)
@@ -199,6 +202,10 @@ export struct EditProfilePage {
             .objectFit(ImageFit.Cover)
             .backgroundColor('#E0D5C6')
             .alt($r('app.media.startIcon'))
+            .onError(() => {
+              console.error(`[EditProfilePage] 头像加载失败 url=${this.avatar}`);
+              this.avatarLoadFailed = true;
+            })
         } else {
           Circle({ width: 92, height: 92 })
             .fill('#E0D5C6')
@@ -208,30 +215,10 @@ export struct EditProfilePage {
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
         }
-
-        if (this.isUploadingAvatar) {
-          Circle({ width: 92, height: 92 })
-            .fill('#66000000')
-
-          LoadingProgress()
-            .width(30)
-            .height(30)
-            .color('#FFFFFF')
-        }
       }
       .width(92)
       .height(92)
       .margin({ top: 18, bottom: 8 })
-      .onClick(() => {
-        this.chooseAndUploadAvatar();
-      })
-
-      Text(this.isUploadingAvatar ? '头像上传中...' : '点击更换头像')
-        .fontSize(13)
-        .fontColor('#8B7355')
-        .onClick(() => {
-          this.chooseAndUploadAvatar();
-        })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
@@ -247,6 +234,7 @@ export struct EditProfilePage {
       this.username = profile.username || this.storageUsername || '';
       this.nickname = profile.nickname || profile.username || '';
       this.avatar = profile.avatar || '';
+      this.avatarLoadFailed = false;
       this.bio = profile.bio || '';
       this.phone = profile.phone || '';
       this.email = profile.email || '';
@@ -258,6 +246,7 @@ export struct EditProfilePage {
       this.username = this.storageUsername || '';
       this.nickname = this.storageUsername || '';
       this.avatar = '';
+      this.avatarLoadFailed = false;
       this.bio = '';
       this.phone = '';
       this.email = '';
@@ -274,19 +263,37 @@ export struct EditProfilePage {
     }
 
     try {
-      const fileUri: string = await pickSingleImageUri();
+      const pickedUri: string = await pickSingleImageUri();
 
-      if (!fileUri || fileUri.length === 0) {
+      if (!pickedUri || pickedUri.length === 0) {
         return;
       }
 
       this.isUploadingAvatar = true;
 
       const context = getContext(this) as common.UIAbilityContext;
-      const avatarUrl: string = await UserService.uploadAvatar(context, fileUri);
+
+      // 真机上相册 URI 不能直接 fs.openSync 读取；
+      // 先复制到 App cache，再读取 cachePath 转 base64。
+      const cachePath: string = FileCacheUtil.copyImageToCachePath(context, pickedUri);
+
+      console.info(`[EditProfilePage] pickedUri=${pickedUri}`);
+      console.info(`[EditProfilePage] cachePath=${cachePath}`);
+
+      const imageData: ImageBase64Data = ImageBase64Util.readImageAsBase64(cachePath);
+
+      console.info(`[EditProfilePage] 头像图片 fileName=${imageData.fileName}, contentType=${imageData.contentType}`);
+      console.info(`[EditProfilePage] 头像 base64 length=${imageData.base64.length}`);
+
+      const avatarUrl: string = await UserService.uploadAvatarBase64(
+        imageData.fileName,
+        imageData.contentType,
+        imageData.base64
+      );
 
       if (avatarUrl && avatarUrl.length > 0) {
         this.avatar = avatarUrl;
+        this.avatarLoadFailed = false;
         AppStorage.SetOrCreate('avatar', avatarUrl);
       }
 
@@ -339,6 +346,7 @@ export struct EditProfilePage {
       this.username = updatedProfile.username || this.username;
       this.nickname = updatedProfile.nickname || this.nickname;
       this.avatar = updatedProfile.avatar || this.avatar;
+      this.avatarLoadFailed = false;
       this.bio = updatedProfile.bio || '';
       this.phone = updatedProfile.phone || '';
       this.email = updatedProfile.email || '';
