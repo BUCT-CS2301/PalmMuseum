@@ -1,4 +1,5 @@
 import router from '@ohos.router';
+import promptAction from '@ohos.promptAction';
 import { CommentItem, ReviewStatus } from '../common/models/InteractionModels';
 import { interactionStore } from '../common/store/InteractionStore';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
@@ -22,12 +23,19 @@ export struct MyCommentsPage {
 
   async loadComments() {
     this.isLoading = true;
-    this.comments = await interactionStore.getUserComments(this.username);
-    this.isLoading = false;
-    if (this.comments.some((item: CommentItem) => item.status === ReviewStatus.Pending)) {
-      this.scheduleReviewRefresh();
-    } else {
+    try {
+      this.comments = await interactionStore.getUserComments(this.username);
+      if (this.comments.some((item: CommentItem) => item.status === ReviewStatus.Pending)) {
+        this.scheduleReviewRefresh();
+      } else {
+        this.clearReviewRefreshTimer();
+      }
+    } catch (error) {
+      this.comments = [];
       this.clearReviewRefreshTimer();
+      promptAction.showToast({ message: (error as Error).message || '加载评论失败' });
+    } finally {
+      this.isLoading = false;
     }
   }
 

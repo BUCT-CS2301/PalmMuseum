@@ -1,4 +1,5 @@
 import router from '@ohos.router';
+import promptAction from '@ohos.promptAction';
 import { HistoryItem } from '../common/models/InteractionModels';
 import { interactionStore } from '../common/store/InteractionStore';
 import { formatDateTime } from '../common/utils/InteractionFormatUtil';
@@ -9,6 +10,7 @@ export struct MyHistoryPage {
   @StorageLink('username') username: string = '';
   @State historyList: HistoryItem[] = [];
   @State isLoading: boolean = true;
+  @State emptyHint: string = '暂无浏览记录，浏览文物详情后会自动记录';
 
   aboutToAppear() {
     this.loadHistory();
@@ -16,8 +18,16 @@ export struct MyHistoryPage {
 
   async loadHistory() {
     this.isLoading = true;
-    this.historyList = await interactionStore.getHistory(this.username);
-    this.isLoading = false;
+    try {
+      this.historyList = await interactionStore.getHistory(this.username);
+      this.emptyHint = '暂无浏览记录，浏览文物详情后会自动记录';
+    } catch (error) {
+      this.historyList = [];
+      this.emptyHint = (error as Error).message || '加载浏览记录失败';
+      promptAction.showToast({ message: this.emptyHint });
+    } finally {
+      this.isLoading = false;
+    }
   }
 
   build() {
@@ -27,7 +37,7 @@ export struct MyHistoryPage {
       if (this.isLoading) {
         LoadingProgress().width(40).height(40).margin({ top: 80 }).color('#C05040')
       } else if (this.historyList.length === 0) {
-        this.EmptyHint('暂无浏览记录，浏览文物详情后会自动记录')
+        this.EmptyHint(this.emptyHint)
       } else {
         List({ space: 12 }) {
           ForEach(this.historyList, (item: HistoryItem) => {

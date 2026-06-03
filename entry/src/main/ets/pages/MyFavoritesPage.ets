@@ -24,13 +24,22 @@ export struct MyFavoritesPage {
 
   async loadFavorites() {
     this.isLoading = true;
-    this.favorites = await interactionStore.getFavorites(this.username);
-    this.favoriteGroups = await interactionStore.getFavoriteGroups(this.username);
-    this.groupSummaries = await interactionStore.getFavoriteGroupSummaries(this.username);
-    if (this.selectedGroup !== ALL_GROUP && this.favoriteGroups.indexOf(this.selectedGroup) === -1) {
+    try {
+      this.favorites = await interactionStore.getFavorites(this.username);
+      this.favoriteGroups = await interactionStore.getFavoriteGroups(this.username);
+      this.groupSummaries = await interactionStore.getFavoriteGroupSummaries(this.username);
+      if (this.selectedGroup !== ALL_GROUP && this.favoriteGroups.indexOf(this.selectedGroup) === -1) {
+        this.selectedGroup = ALL_GROUP;
+      }
+    } catch (error) {
+      this.favorites = [];
+      this.favoriteGroups = [...FAVORITE_GROUPS];
+      this.groupSummaries = [];
       this.selectedGroup = ALL_GROUP;
+      promptAction.showToast({ message: (error as Error).message || '加载收藏失败' });
+    } finally {
+      this.isLoading = false;
     }
-    this.isLoading = false;
   }
 
   private getFilteredFavorites(): FavoriteItem[] {

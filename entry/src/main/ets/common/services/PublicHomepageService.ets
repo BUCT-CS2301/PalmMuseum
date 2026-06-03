@@ -33,6 +33,15 @@ export interface PublicHomepageData {
 }
 
 export class PublicHomepageService {
+  private static async safeLoad<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await loader();
+    } catch (error) {
+      console.error(`[PublicHomepageService] 加载公开主页数据失败 ${JSON.stringify(error)}`);
+      return fallback;
+    }
+  }
+
   static async getPublicHomepage(
     username: string,
     currentUsername: string
@@ -60,19 +69,19 @@ export class PublicHomepageService {
     };
 
     const favorites: FavoriteItem[] = visible.favorites
-      ? await interactionStore.getFavorites(username)
+      ? await PublicHomepageService.safeLoad<FavoriteItem[]>(() => interactionStore.getFavorites(username), [])
       : [];
 
     const likes: LikeItem[] = visible.likes
-      ? await interactionStore.getLikes(username)
+      ? await PublicHomepageService.safeLoad<LikeItem[]>(() => interactionStore.getLikes(username), [])
       : [];
 
     const comments: CommentItem[] = visible.comments
-      ? await interactionStore.getUserComments(username)
+      ? await PublicHomepageService.safeLoad<CommentItem[]>(() => interactionStore.getUserComments(username), [])
       : [];
 
     const uploads: UploadedPhotoItem[] = visible.uploads
-      ? await interactionStore.getUploads(username)
+      ? await PublicHomepageService.safeLoad<UploadedPhotoItem[]>(() => interactionStore.getUploads(username), [])
       : [];
 
     return {

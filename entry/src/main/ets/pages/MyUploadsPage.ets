@@ -1,5 +1,6 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
+import common from '@ohos.app.ability.common';
 import { ReviewStatus, UploadedPhotoItem } from '../common/models/InteractionModels';
 import { interactionStore } from '../common/store/InteractionStore';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
@@ -28,12 +29,19 @@ export struct MyUploadsPage {
 
   async loadUploads() {
     this.isLoading = true;
-    this.uploads = await interactionStore.getUploads(this.username);
-    this.isLoading = false;
-    if (this.uploads.some((item: UploadedPhotoItem) => item.status === ReviewStatus.Pending)) {
-      this.scheduleReviewRefresh();
-    } else {
+    try {
+      this.uploads = await interactionStore.getUploads(this.username);
+      if (this.uploads.some((item: UploadedPhotoItem) => item.status === ReviewStatus.Pending)) {
+        this.scheduleReviewRefresh();
+      } else {
+        this.clearReviewRefreshTimer();
+      }
+    } catch (error) {
+      this.uploads = [];
       this.clearReviewRefreshTimer();
+      promptAction.showToast({ message: (error as Error).message || '加载上传列表失败' });
+    } finally {
+      this.isLoading = false;
     }
   }
 
@@ -239,17 +247,24 @@ export struct MyUploadsPage {
     if (!imageUri) {
       return;
     }
-    await interactionStore.addUpload({
+    try {
+      await interactionStore.addUpload(
+        getContext(this) as common.UIAbilityContext,
+        {
       artifactId: artifactId,
       artifactTitle: artifactTitle,
       username: this.username,
       imageUri: imageUri,
       location: this.draftLocation,
       description: this.draftDescription
-    });
+        }
+      );
     this.draftDescription = '';
     promptAction.showToast({ message: '照片已上传，等待审核' });
     await this.loadUploads();
     this.scheduleReviewRefresh();
+    } catch (error) {
+      promptAction.showToast({ message: (error as Error).message || '上传失败' });
+    }
   }
 }
