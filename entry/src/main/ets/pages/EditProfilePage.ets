@@ -17,6 +17,8 @@ export struct EditProfilePage {
   @State avatar: string = '';
   @State bio: string = '';
   @State phone: string = '';
+
+
   @State email: string = '';
   @State isLoading: boolean = false;
   @State isUploadingAvatar: boolean = false;
