@@ -1,5 +1,6 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
+import common from '@ohos.app.ability.common';
 import { Artifact } from '../common/models/Artifact';
 import { MuseumArtifactApi, ArtifactSearchResult } from '../common/network/MuseumArtifactApi';
 import {
@@ -8,7 +9,7 @@ import {
   InteractionSummary,
   ReviewStatus
 } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
 import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
 import { MuseumVoiceService } from '../common/voice/MuseumVoiceService';
@@ -143,9 +144,9 @@ export struct ArtifactDetailPage {
       return;
     }
     if (this.isLogin && this.username) {
-      await interactionStore.recordHistory(this.artifact, this.username);
-      this.favoriteGroups = await interactionStore.getFavoriteGroups(this.username);
-      this.selectedFavoriteGroup = await interactionStore.getFavoriteGroupForArtifact(this.username, this.artifact.id);
+      await InteractionService.recordHistory(this.artifact, this.username);
+      this.favoriteGroups = await InteractionService.getFavoriteGroups(this.username);
+      this.selectedFavoriteGroup = await InteractionService.getFavoriteGroupForArtifact(this.username, this.artifact.id);
     } else {
       this.favoriteGroups = FAVORITE_GROUPS;
       this.selectedFavoriteGroup = FAVORITE_GROUPS[0];
@@ -158,9 +159,9 @@ export struct ArtifactDetailPage {
       return;
     }
     const actor = this.resolveActor();
-    this.likeSummary = await interactionStore.getLikeSummary(this.artifact.id, actor);
-    this.favoriteSummary = await interactionStore.getFavoriteSummary(this.artifact.id, actor);
-    this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id, actor);
+    this.likeSummary = await InteractionService.getLikeSummary(this.artifact.id, actor);
+    this.favoriteSummary = await InteractionService.getFavoriteSummary(this.artifact.id, actor);
+    this.comments = await InteractionService.getCommentsForArtifact(this.artifact.id, actor);
     if (this.comments.some((item: CommentItem) => item.status === ReviewStatus.Pending)) {
       this.scheduleReviewRefresh();
     } else {
@@ -1254,7 +1255,7 @@ export struct ArtifactDetailPage {
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    this.likeSummary = await interactionStore.toggleLike(this.artifact.id, this.username, this.artifact);
+    this.likeSummary = await InteractionService.toggleLike(this.artifact, this.username);
     this.showToast(this.likeSummary.active ? '已点赞' : '已取消点赞');
   }
 
@@ -1267,7 +1268,7 @@ export struct ArtifactDetailPage {
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    this.favoriteSummary = await interactionStore.toggleFavorite(this.artifact, this.username, this.selectedFavoriteGroup);
+    this.favoriteSummary = await InteractionService.toggleFavorite(this.artifact, this.username, this.selectedFavoriteGroup);
     if (this.favoriteSummary.active) {
       this.showToast(`已加入“${this.selectedFavoriteGroup}”`);
     } else {
@@ -1281,7 +1282,7 @@ export struct ArtifactDetailPage {
     if (!this.favoriteSummary.active || !this.artifact || !this.isLogin || !this.username) {
       return;
     }
-    await interactionStore.moveFavoriteToGroup(this.artifact.id, this.username, groupName);
+    await InteractionService.moveFavoriteToGroup(this.artifact.id, this.username, groupName);
     this.showToast(`已移动到“${groupName}”`);
     await this.refreshInteractionState();
   }
@@ -1306,7 +1307,7 @@ export struct ArtifactDetailPage {
       this.showToast('你已经点赞过这条评论了');
       return;
     }
-    const summary = await interactionStore.toggleCommentLike(item.id, this.username);
+    const summary = await InteractionService.toggleCommentLike(item.id, this.username);
     this.comments = this.comments.map((comment: CommentItem) => {
       if (comment.id !== item.id) {
         return comment;
@@ -1331,7 +1332,7 @@ export struct ArtifactDetailPage {
       return nextComment;
     });
     if (this.artifact) {
-      this.comments = await interactionStore.getCommentsForArtifact(this.artifact.id, this.username);
+      this.comments = await InteractionService.getCommentsForArtifact(this.artifact.id, this.username);
     }
     this.showToast('已点赞评论');
   }
@@ -1349,7 +1350,7 @@ export struct ArtifactDetailPage {
       return;
     }
     this.isSubmittingComment = true;
-    const result = await interactionStore.addComment(
+    const result = await InteractionService.addComment(
       this.artifact,
       this.username,
       this.commentInput,
@@ -1384,7 +1385,8 @@ export struct ArtifactDetailPage {
     if (!imageUri) {
       return;
     }
-    await interactionStore.addUpload({
+    const context = getContext(this) as common.UIAbilityContext;
+    const result = await InteractionService.addUpload(context, {
       artifactId: this.artifact.id,
       artifactTitle: this.artifact.title,
       username: this.username,
@@ -1392,8 +1394,10 @@ export struct ArtifactDetailPage {
       location: this.uploadLocation.trim() || this.artifact.museum,
       description: this.uploadDescription.trim()
     });
-    this.uploadDescription = '';
-    this.showToast('照片已上传，等待审核');
+    if (result.ok) {
+      this.uploadDescription = '';
+    }
+    this.showToast(result.message);
   }
 
   private showToast(message: string) {

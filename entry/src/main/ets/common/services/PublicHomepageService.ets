@@ -6,7 +6,7 @@ import {
   PrivacySettings,
   UploadedPhotoItem
 } from '../models/InteractionModels';
-import { interactionStore } from '../store/InteractionStore';
+import { InteractionService } from './InteractionService';
 import { PrivacyService } from './PrivacyService';
 
 export interface PublicUserProfile {
@@ -93,19 +93,19 @@ export class PublicHomepageService {
     };
 
     const favorites: FavoriteItem[] = visible.favorites
-      ? await interactionStore.getFavorites(username)
+      ? await InteractionService.getFavorites(username)
       : [];
 
     const likes: LikeItem[] = visible.likes
-      ? await interactionStore.getLikes(username)
+      ? await InteractionService.getLikes(username)
       : [];
 
     const comments: CommentItem[] = visible.comments
-      ? await interactionStore.getUserComments(username)
+      ? await InteractionService.getUserComments(username)
       : [];
 
     const uploads: UploadedPhotoItem[] = visible.uploads
-      ? await interactionStore.getUploads(username)
+      ? await InteractionService.getUploads(username)
       : [];
 
     return {
