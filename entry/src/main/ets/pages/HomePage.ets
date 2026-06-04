@@ -1,5 +1,6 @@
 // HomePage.ets（敦煌色系 + 优化）
-import { Artifact, mockArtifacts } from '../common/models/Artifact';
+import { Artifact } from '../common/models/Artifact';
+import { MuseumArtifactApi, ArtifactFilterOptions, ArtifactSearchResult } from '../common/network/MuseumArtifactApi';
 import router from '@ohos.router';
 
 interface FilterConfig {
@@ -12,7 +13,8 @@ interface FilterConfig {
 @Entry
 @Component
 export struct HomePage {
-  private allArtifacts: Artifact[] = mockArtifacts;
+  private allArtifacts: Artifact[] = [];
+  @State totalCount: number = 0;
 
   @State displayList: Artifact[] = [];
   @State searchKeyword: string = '';
@@ -27,6 +29,7 @@ export struct HomePage {
   @State types: string[] = [];
   @State materials: string[] = [];
   @State museums: string[] = [];
+  private filterApiLoaded: boolean = false;
 
   @State currentPage: number = 1;
   private pageSize: number = 10;
@@ -55,11 +58,95 @@ export struct HomePage {
     }
   }
 
-  private initFilterOptions() {
-    this.periods = this.getUniqueValues('period');
-    this.types = this.getUniqueValues('type');
-    this.materials = this.getUniqueValues('material');
-    this.museums = this.getUniqueValues('museum');
+  private async initFilterOptions() {
+    try {
+      const options: ArtifactFilterOptions = await MuseumArtifactApi.getFilterOptions();
+      this.periods = this.ensureAllOption(options.periods);
+      this.types = this.ensureAllOption(options.types);
+      this.materials = this.ensureAllOption(options.materials);
+      this.museums = this.ensureAllOption(options.museums || []);
+      this.filterApiLoaded = true;
+      console.info(`[HomePage] 筛选接口加载成功 periods=${this.periods.length}, types=${this.types.length}, materials=${this.materials.length}, museums=${this.museums.length}`);
+
+      // 如果筛选接口实际没有返回完整数据，就从真实搜索接口把全部文物分页拉一遍，再提取完整分类。
+      // 这不是 mock，也不是写死；数据仍然来自后端接口。
+      if (this.periods.length <= 1 || this.types.length <= 3 || this.materials.length <= 3 || this.museums.length <= 1) {
+        console.warn('[HomePage] 筛选接口数据过少，开始从真实搜索接口分页提取完整筛选项');
+        await this.loadFilterOptionsFromAllArtifacts();
+      }
+    } catch (e) {
+      console.error(`[HomePage] 筛选接口加载失败，开始从真实搜索接口分页提取完整筛选项：${JSON.stringify(e)}`);
+      await this.loadFilterOptionsFromAllArtifacts();
+    }
+  }
+
+  private async loadFilterOptionsFromAllArtifacts() {
+    const periodSet = new Set<string>();
+    const typeSet = new Set<string>();
+    const materialSet = new Set<string>();
+    const museumSet = new Set<string>();
+
+    let page = 1;
+    const size = 100;
+    let total = 0;
+    let loaded = 0;
+
+    try {
+      do {
+        const result: ArtifactSearchResult = await MuseumArtifactApi.searchArtifacts({
+          page: page,
+          size: size
+        });
+
+        total = result.total;
+        loaded += result.items.length;
+
+        result.items.forEach((item: Artifact) => {
+          if (item.period && item.period.length > 0 && item.period !== 'unknown') {
+            periodSet.add(item.period);
+          }
+          if (item.type && item.type.length > 0 && item.type !== 'unknown') {
+            typeSet.add(item.type);
+          }
+          if (item.material && item.material.length > 0 && item.material !== 'unknown') {
+            materialSet.add(item.material);
+          }
+          if (item.museum && item.museum.length > 0 && item.museum !== 'unknown') {
+            museumSet.add(item.museum);
+          }
+        });
+
+        page++;
+      } while (loaded < total && page <= 20);
+
+      this.periods = this.ensureAllOption(Array.from(periodSet));
+      this.types = this.ensureAllOption(Array.from(typeSet));
+      this.materials = this.ensureAllOption(Array.from(materialSet));
+      this.museums = this.ensureAllOption(Array.from(museumSet));
+      this.filterApiLoaded = true;
+      console.info(`[HomePage] 搜索接口提取筛选项完成 loaded=${loaded}, total=${total}, periods=${this.periods.length}, types=${this.types.length}, materials=${this.materials.length}, museums=${this.museums.length}`);
+    } catch (e) {
+      this.filterApiLoaded = false;
+      console.error(`[HomePage] 从搜索接口提取筛选项失败：${JSON.stringify(e)}`);
+      this.periods = ['全部'];
+      this.types = ['全部'];
+      this.materials = ['全部'];
+      this.museums = ['全部'];
+    }
+  }
+
+  private ensureAllOption(list: string[]): string[] {
+    const result: string[] = [];
+    const set = new Set<string>();
+    if (list) {
+      list.forEach((value: string) => {
+        if (value && value.length > 0 && value !== '全部' && !set.has(value)) {
+          set.add(value);
+          result.push(value);
+        }
+      });
+    }
+    return ['全部', ...result];
   }
 
   private getUniqueValues(field: string): string[] {
@@ -72,10 +159,50 @@ export struct HomePage {
         case 'material': value = item.material; break;
         case 'museum': value = item.museum; break;
       }
-      set.add(value);
+      if (value && value.length > 0) {
+        set.add(value);
+      }
     }
     return ['全部', ...Array.from(set)];
   }
+
+
+  // 接口筛选项为空/失败时，用已经拿到的真实列表数据补齐筛选栏，避免只剩“全部”
+  private fillFilterOptionsFromArtifacts(list: Artifact[]) {
+    const periodSet = new Set<string>();
+    const typeSet = new Set<string>();
+    const materialSet = new Set<string>();
+    const museumSet = new Set<string>();
+
+    list.forEach((item: Artifact) => {
+      if (item.period && item.period.length > 0 && item.period !== 'unknown') {
+        periodSet.add(item.period);
+      }
+      if (item.type && item.type.length > 0 && item.type !== 'unknown') {
+        typeSet.add(item.type);
+      }
+      if (item.material && item.material.length > 0 && item.material !== 'unknown') {
+        materialSet.add(item.material);
+      }
+      if (item.museum && item.museum.length > 0 && item.museum !== 'unknown') {
+        museumSet.add(item.museum);
+      }
+    });
+
+    if (this.periods.length <= 1 && periodSet.size > 0) {
+      this.periods = ['全部', ...Array.from(periodSet)];
+    }
+    if (this.types.length <= 1 && typeSet.size > 0) {
+      this.types = ['全部', ...Array.from(typeSet)];
+    }
+    if (this.materials.length <= 1 && materialSet.size > 0) {
+      this.materials = ['全部', ...Array.from(materialSet)];
+    }
+    if (museumSet.size > 0) {
+      this.museums = ['全部', ...Array.from(museumSet)];
+    }
+  }
+
   private chunkArray(arr: Artifact[], size: number): Artifact[][] {
     const result: Artifact[][] = [];
     for (let i = 0; i < arr.length; i += size) {
@@ -89,38 +216,21 @@ export struct HomePage {
     ['夏', 2], ['商', 3], ['西周', 4], ['春秋', 5], ['战国', 6],
     ['秦', 7], ['西汉', 8], ['东汉', 9], ['三国', 10],
     ['西晋', 11], ['东晋', 12], ['南北朝', 13], ['隋', 14],
-    ['唐', 15], ['五代十国', 16], ['北宋', 17], ['南宋', 18],
+    ['唐', 15], ['五代十国', 16], ['北宋', 17], ['宋', 17], ['南宋', 18],
     ['辽', 19], ['金', 20], ['元', 21], ['明', 22], ['清', 23],
-    ['民国', 24]
+    ['民国', 24], ['现代', 25]
   ]);
 
   private periodOrder(period: string): number {
-    return this.periodOrderMap.get(period) ?? 99; // 未定义朝代排最后
+    return this.periodOrderMap.get(period) ?? 99;
   }
 
-  private refreshList() {
-    let list = [...this.allArtifacts];
-
-    const kw = this.searchKeyword.trim().toLowerCase();
-    if (kw) {
-      list = list.filter(item =>
-      item.title.toLowerCase().includes(kw) ||
-        item.museum.toLowerCase().includes(kw) ||
-        item.period.toLowerCase().includes(kw) ||
-        item.type.toLowerCase().includes(kw) ||
-        item.material.toLowerCase().includes(kw)
-      );
-    }
-
-    if (this.filterPeriod !== '全部') list = list.filter(item => item.period === this.filterPeriod);
-    if (this.filterType !== '全部') list = list.filter(item => item.type === this.filterType);
-    if (this.filterMaterial !== '全部') list = list.filter(item => item.material === this.filterMaterial);
-    if (this.filterMuseum !== '全部') list = list.filter(item => item.museum === this.filterMuseum);
-
+  private sortCurrentList(list: Artifact[]): Artifact[] {
+    const sorted = [...list];
     if (this.sortBy === 'hot') {
-      list.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+      sorted.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
     } else if (this.sortBy === 'name') {
-      list.sort((a, b) => {
+      sorted.sort((a, b) => {
         try {
           return a.title.localeCompare(b.title, 'zh-CN');
         } catch (e) {
@@ -128,61 +238,134 @@ export struct HomePage {
         }
       });
     } else if (this.sortBy === 'period') {
-      list.sort((a, b) => this.periodOrder(a.period) - this.periodOrder(b.period));
+      sorted.sort((a, b) => this.periodOrder(a.period) - this.periodOrder(b.period));
     }
+    return sorted;
+  }
 
-    this.totalFilteredList = list;
+  private async refreshList() {
     this.currentPage = 1;
-    this.updateDisplayList();
+    this.totalFilteredList = [];
+    this.displayList = [];
+    await this.fetchArtifactPage(true);
+  }
+
+  private async fetchArtifactPage(reset: boolean) {
+    try {
+      const result: ArtifactSearchResult = await MuseumArtifactApi.searchArtifacts({
+        keyword: this.searchKeyword.trim(),
+        page: this.currentPage,
+        size: this.pageSize,
+        period: this.filterPeriod,
+        type: this.filterType,
+        material: this.filterMaterial,
+        sortBy: this.sortBy
+      });
+
+      this.totalCount = result.total;
+      const merged = reset ? result.items : [...this.totalFilteredList, ...result.items];
+      if (!this.filterApiLoaded) {
+        this.fillFilterOptionsFromArtifacts(merged);
+      }
+      this.totalFilteredList = this.sortCurrentList(merged);
+      this.displayList = this.totalFilteredList;
+      this.hasMore = this.totalFilteredList.length < this.totalCount;
+    } catch (e) {
+      console.error(`[HomePage] 加载文物列表失败：${JSON.stringify(e)}`);
+      this.totalCount = 0;
+      this.totalFilteredList = [];
+      this.displayList = [];
+      this.hasMore = false;
+    }
   }
 
   private updateDisplayList() {
-    this.displayList = this.totalFilteredList.slice(0, this.currentPage * this.pageSize);
-    this.hasMore = this.currentPage * this.pageSize < this.totalFilteredList.length;
+    this.displayList = this.totalFilteredList;
+    this.hasMore = this.totalFilteredList.length < this.totalCount;
   }
 
-  private loadMore() {
+  private async loadMore() {
     if (this.hasMore) {
       this.currentPage++;
-      this.updateDisplayList();
+      await this.fetchArtifactPage(false);
     }
   }
 
   build() {
     Column() {
-      // ===== 导航栏标题 =====
-      Row() {
-        Text('🏛️')                          // 博物馆图标
-          .fontSize(24)
-          .margin({ right: 6 })
-        Text('掌上博物馆')
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#3A3A3A')
-          .fontFamily('myCustomFont')   // 更换字体
-        Blank()
-        Text(this.viewMode === 0 ? '📱' : '📋')
-          .fontSize(20)
-          .fontColor('#3A3A3A')
-          .onClick(() => { this.viewMode = (this.viewMode + 1) % 2; })
+      // ===== 顶部主题区：与 ShowPage 的红色晕染风格呼应 =====
+      Stack() {
+        Column() {
+          // 装饰晕染层
+          Row() {
+            Blank()
+          }
+          .width(160)
+          .height(160)
+          .backgroundColor('#A94C3E')
+          .opacity(0.32)
+          .borderRadius(80)
+          .position({ x: -46, y: -50 })
+
+          Row() {
+            Blank()
+          }
+          .width(190)
+          .height(190)
+          .backgroundColor('#E8B987')
+          .opacity(0.18)
+          .borderRadius(95)
+          .position({ x: 290, y: -72 })
+
+          Row() {
+            Column() {
+              Text('馆藏文物')
+                .fontSize(30)
+                .fontWeight(FontWeight.Bold)
+                .fontColor('#FFF8E8')
+                .fontFamily('myCustomFont')
+
+              Text('检索千年瑰宝 · 探索东方匠心')
+                .fontSize(14)
+                .fontColor('#F7D9B4')
+                .margin({ top: 8 })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text(this.viewMode === 0 ? '卡片' : '列表')
+              .fontSize(13)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#843327')
+              .backgroundColor('#F6D8A8')
+              .borderRadius(18)
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .onClick(() => { this.viewMode = (this.viewMode + 1) % 2; })
+          }
+          .width('100%')
+          .padding({ left: 24, right: 24, top: 24 })
+          .alignItems(VerticalAlign.Center)
+
+        }
+        .width('100%')
+        .height(108)
+        .backgroundColor('#862F26')
+        .borderRadius({ bottomLeft: 28, bottomRight: 28 })
+        .clip(true)
       }
       .width('100%')
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .backgroundColor('#F5F0E8')
+      .height(108)
 
-      // ===== 搜索框 =====
-      // ===== 搜索框（图标固定在前端） =====
+      // ===== 搜索卡片 =====
       Row() {
-        // 1. 固定搜索图标
         Text('🔍')
           .fontSize(18)
-          .fontColor('#8B7355')
-          .margin({ left: 12, right: 4 })
+          .fontColor('#9A6C4A')
+          .margin({ left: 14, right: 4 })
 
-        // 2. 输入框（去掉图标，绑定 text）
-        TextInput({ placeholder: '  搜索文物名称、年代、类型、材质...', text: this.searchKeyword })
-          .placeholderFont({ size: 14 })          // 占位符文字大小
-          .placeholderColor('#999999')            // 占位符文字颜色
+        TextInput({ placeholder: '搜索文物名称、年代、类型、材质...', text: this.searchKeyword })
+          .placeholderFont({ size: 14 })
+          .placeholderColor('#B6A897')
           .onChange((value: string) => {
             this.searchKeyword = value;
             if (this.searchTimer !== -1) {
@@ -193,18 +376,17 @@ export struct HomePage {
             }, 300);
           })
           .layoutWeight(1)
-          .height(40)
+          .height(42)
           .fontSize(14)
-          .backgroundColor(Color.Transparent)    // 改为透明，由外层 Row 提供背景
-          .borderRadius(0)                       // 去掉独立圆角
+          .backgroundColor(Color.Transparent)
+          .borderRadius(0)
           .padding({ left: 0 })
 
-        // 3. 清除按钮
         if (this.searchKeyword.trim()) {
           Text('✕')
-            .fontSize(16)
-            .fontColor('#8B7355')
-            .margin({ left: 8, right: 12 })
+            .fontSize(15)
+            .fontColor('#9A6C4A')
+            .margin({ left: 8, right: 14 })
             .onClick(() => {
               this.searchKeyword = '';
               if (this.searchTimer !== -1) {
@@ -215,109 +397,101 @@ export struct HomePage {
             })
         }
       }
-      .width('100%')
-      .height(44)                    // 整行高度
-      .backgroundColor('#FFFFFF')    // 外层统一白色背景
-      .borderRadius(20)              // 外层统一圆角
-      .padding({ left: 0, right: 0, top: 0, bottom: 0 })
-      .margin({ left: 12, right: 12, top: 4, bottom: 4 })
+      .width('92%')
+      .height(52)
+      .backgroundColor('#FFFDF8')
+      .borderRadius(26)
+      .shadow({ radius: 14, color: '#22000000', offsetY: 6 })
+      .margin({ top: -18, bottom: 12 })
 
-      // ===== 折叠式筛选栏 =====
+      // ===== 筛选区域 =====
       Column() {
-        // ===== 年代筛选行（默认显示） =====
         Row() {
-          // 年代 FilterBar 放在 Row 里，占用剩余空间
           Row() {
-            this.FilterBar({ label: '年代', options: this.periods, value: this.filterPeriod,
-              onChange: (val: string) => { this.filterPeriod = val; this.refreshList(); } })
+            Text('筛选')
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#3A2A1A')
+            Text('  Filter')
+              .fontSize(11)
+              .fontColor('#B4815D')
           }
-          .layoutWeight(1)                          // 原来设置给 FilterBar 的属性移到这里
-          .padding({ left: 8, right: 0 })
+          .layoutWeight(1)
 
           Text(this.showMoreFilters ? '收起 ▲' : '展开 ▼')
-            .fontSize(12)
-            .fontColor('#C05040')
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-            .backgroundColor('#F5E8E2')
+            .fontSize(11)
+            .fontColor('#B94735')
+            .backgroundColor('#F7E5DB')
             .borderRadius(12)
-            .margin({ left: 4, right: 8 })
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
             .onClick(() => { this.showMoreFilters = !this.showMoreFilters; })
         }
-        .height(40)
         .width('100%')
-        .backgroundColor('#FFFFFF')
+        .alignItems(VerticalAlign.Center)
+        .margin({ bottom: 6 })
 
-        // ===== 展开的筛选行 =====
         if (this.showMoreFilters) {
-          // 类型
-          Row() {
+          Divider().strokeWidth(0.6).color('#EFE1D1').margin({ top: 6, bottom: 6 })
+
+          this.FilterBar({ label: '年代', options: this.periods, value: this.filterPeriod,
+            onChange: (val: string) => { this.filterPeriod = val; this.refreshList(); } })
+
+          Column() {
             this.FilterBar({ label: '类型', options: this.types, value: this.filterType,
               onChange: (val: string) => { this.filterType = val; this.refreshList(); } })
           }
-          .width('100%')          // 设置给外层 Row
-          .height(40)
-          .padding({ left: 8, right: 8 })
-          .backgroundColor('#FFFFFF')
-          .borderRadius(4)
-          .margin({ top: 2 })
-
-          // 材质
-          Row() {
-            this.FilterBar({ label: '材质', options: this.materials, value: this.filterMaterial,
-              onChange: (val: string) => { this.filterMaterial = val; this.refreshList(); } })
-          }
           .width('100%')
-          .height(40)
-          .padding({ left: 8, right: 8 })
-          .backgroundColor('#FFFFFF')
-          .borderRadius(4)
-          .margin({ top: 2 })
+          .margin({ top: 6, bottom: 6 })
 
-          // 博物馆
-          Row() {
-            this.FilterBar({ label: '博物馆', options: this.museums, value: this.filterMuseum,
-              onChange: (val: string) => { this.filterMuseum = val; this.refreshList(); } })
-          }
-          .width('100%')
-          .height(40)
-          .padding({ left: 8, right: 8 })
-          .backgroundColor('#FFFFFF')
-          .borderRadius(4)
-          .margin({ top: 2 })
+          this.FilterBar({ label: '材质', options: this.materials, value: this.filterMaterial,
+            onChange: (val: string) => { this.filterMaterial = val; this.refreshList(); } })
         }
       }
-      .width('100%')
-      .backgroundColor('#FFFFFF')
-      .borderRadius(4)
-      .margin({ top: 2 })
+      .width('92%')
+      .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+      .backgroundColor('#FFFDF8')
+      .borderRadius(16)
+      .shadow({ radius: 10, color: '#14000000', offsetY: 5 })
+      .margin({ bottom: 8 })
 
-      // ===== 排序按钮行 =====
+      // ===== 排序栏 =====
       Row() {
-        Text('排序：').fontSize(13).fontColor('#8B7355').margin({ right: 6 })
-        Text('热门').fontSize(13)
-          .fontColor(this.sortBy === 'hot' ? '#C05040' : '#8B7355')
-          .fontWeight(this.sortBy === 'hot' ? FontWeight.Bold : FontWeight.Normal)
-          .margin({ right: 8 })
+        Text('排序')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#3A2A1A')
+          .margin({ right: 12 })
+
+        Text('热门')
+          .fontSize(13)
+          .fontColor(this.sortBy === 'hot' ? '#FFFFFF' : '#8B7355')
+          .backgroundColor(this.sortBy === 'hot' ? '#B94735' : '#FFFDF8')
+          .borderRadius(16)
+          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+          .margin({ right: 6 })
           .onClick(() => { this.sortBy = 'hot'; this.refreshList(); })
-        Text('名称').fontSize(13)
-          .fontColor(this.sortBy === 'name' ? '#C05040' : '#8B7355')
-          .fontWeight(this.sortBy === 'name' ? FontWeight.Bold : FontWeight.Normal)
+        Text('名称')
+          .fontSize(13)
+          .fontColor(this.sortBy === 'name' ? '#FFFFFF' : '#8B7355')
+          .backgroundColor(this.sortBy === 'name' ? '#B94735' : '#FFFDF8')
+          .borderRadius(16)
+          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
           .margin({ right: 8 })
           .onClick(() => { this.sortBy = 'name'; this.refreshList(); })
-        Text('年代').fontSize(13)
-          .fontColor(this.sortBy === 'period' ? '#C05040' : '#8B7355')
-          .fontWeight(this.sortBy === 'period' ? FontWeight.Bold : FontWeight.Normal)
-          .margin({ right: 8 })
+        Text('年代')
+          .fontSize(13)
+          .fontColor(this.sortBy === 'period' ? '#FFFFFF' : '#8B7355')
+          .backgroundColor(this.sortBy === 'period' ? '#B94735' : '#FFFDF8')
+          .borderRadius(16)
+          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
           .onClick(() => { this.sortBy = 'period'; this.refreshList(); })
       }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-      .backgroundColor('#FFFFFF')
-      .border({ width: { bottom: 0.5 }, color: '#E0D5C6' })
+      .width('92%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ bottom: 8 })
 
-      // ===== 内容区域（含空状态）+ 列表末尾加载按钮 =====
+      // ===== 内容区域 =====
       if (this.displayList.length === 0) {
-        // 空状态提示
         Column() {
           Text('🏺')
             .fontSize(56)
@@ -325,18 +499,19 @@ export struct HomePage {
           Text('暂无匹配文物')
             .fontSize(18)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#8B7355')
+            .fontColor('#7B6245')
           Text('试试调整筛选条件或搜索关键词')
             .fontSize(14)
-            .fontColor('#8B7355')
+            .fontColor('#A8794F')
             .margin({ top: 6 })
         }
-        .width('100%')
+        .width('92%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
-        .backgroundColor('#F5F0E8')
+        .backgroundColor('#FFFDF8')
+        .borderRadius(22)
+        .margin({ bottom: 12 })
       } else if (this.viewMode === 0) {
-        // ===== 网格模式（List 内自定义两列） =====
         List() {
           ForEach(this.chunkArray(this.displayList, 2), (row: Artifact[]) => {
             ListItem() {
@@ -345,138 +520,156 @@ export struct HomePage {
                   Column() {
                     this.CardView(item)
                   }
-                  .layoutWeight(1)   // 每个卡片等分宽度
-                  .margin(4)         // 卡片之间及四周的间距
+                  .layoutWeight(1)
+                  .margin({ left: 5, right: 5, top: 5, bottom: 5 })
                 }, (item: Artifact) => item.id)
-                // 如果此行只有一个卡片，右侧留空占位
                 if (row.length < 2) {
-                  Column().layoutWeight(1).margin(4)
+                  Column().layoutWeight(1).margin({ left: 5, right: 5, top: 5, bottom: 5 })
                 }
               }
               .width('100%')
-              .justifyContent(FlexAlign.Start)
+              .padding({ left: 7, right: 7 })
             }
             .width('100%')
-            .margin({ left: 0, right: 0 })  // 去掉水平外边距，改用 Row 内部 margin 控制
           }, (row: Artifact[]) => `${row[0].id}_${row.length}`)
 
-          // 列表末尾：加载更多 / 已经到底（独占一行）
           if (this.hasMore) {
             ListItem() {
               Row() {
-                Button('加载更多 ▼')
-                  .width('60%')
-                  .height(40)
+                Button('加载更多')
+                  .width('58%')
+                  .height(42)
                   .fontSize(14)
-                  .backgroundColor('#FFFFFF')
-                  .fontColor('#C05040')
-                  .border({ width: 1, color: '#C05040' })
-                  .borderRadius(20)
+                  .backgroundColor('#B94735')
+                  .fontColor('#FFFFFF')
+                  .borderRadius(21)
                   .onClick(() => this.loadMore())
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
             }
             .width('100%')
-            .margin({ top: 8, bottom: 8 })
+            .margin({ top: 10, bottom: 12 })
           } else if (this.displayList.length > 0) {
             ListItem() {
               Text('已经到底了')
                 .fontSize(12)
-                .fontColor('#8B7355')
+                .fontColor('#A8794F')
                 .width('100%')
                 .textAlign(TextAlign.Center)
             }
             .width('100%')
-            .margin({ top: 8, bottom: 8 })
+            .margin({ top: 10, bottom: 12 })
           }
         }
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('#F5F0E8')
-        .padding(4)   // 四周留白，与卡片的 margin 配合形成 8px 间距
+        .backgroundColor('#F5EFE6')
         .divider(null)
       } else {
-        // ===== 列表模式（原有单列布局） =====
         List() {
           ForEach(this.displayList, (item: Artifact) => {
             ListItem() {
               this.ListView(item)
             }
-            .margin({ top: 2, bottom: 2 })
+            .margin({ top: 5, bottom: 5, left: 14, right: 14 })
           }, (item: Artifact) => item.id)
 
           if (this.hasMore) {
             ListItem() {
               Row() {
-                Button('加载更多 ▼')
-                  .width('60%')
-                  .height(40)
+                Button('加载更多')
+                  .width('58%')
+                  .height(42)
                   .fontSize(14)
-                  .backgroundColor('#FFFFFF')
-                  .fontColor('#C05040')
-                  .border({ width: 1, color: '#C05040' })
-                  .borderRadius(20)
+                  .backgroundColor('#B94735')
+                  .fontColor('#FFFFFF')
+                  .borderRadius(21)
                   .onClick(() => this.loadMore())
               }
               .width('100%')
               .justifyContent(FlexAlign.Center)
             }
             .width('100%')
-            .margin({ top: 8, bottom: 8 })
+            .margin({ top: 10, bottom: 12 })
           } else if (this.displayList.length > 0) {
             ListItem() {
               Text('已经到底了')
                 .fontSize(12)
-                .fontColor('#8B7355')
+                .fontColor('#A8794F')
                 .width('100%')
                 .textAlign(TextAlign.Center)
             }
             .width('100%')
-            .margin({ top: 8, bottom: 8 })
+            .margin({ top: 10, bottom: 12 })
           }
         }
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('#F5F0E8')
-        .padding({ left: 8, right: 8, top: 0, bottom: 0 })
+        .backgroundColor('#F5EFE6')
         .divider(null)
       }
-
-
     }
-    .width('100%').height('100%')
-    .backgroundColor('#F5F0E8')
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5EFE6')
   }
 
   @Builder CardView(item: Artifact) {
     Column() {
       Image(item.imageUrl)
         .width('100%')
-        .aspectRatio(1)
-        .objectFit(ImageFit.Cover)
-        .borderRadius(8)
+        .height(138)
+        .objectFit(ImageFit.Contain)
+        .backgroundColor('#F1E6D7')
+        .borderRadius(16)
 
       Text(item.title)
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#3A3A3A')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 6, bottom: 2 })
-        .width('100%')
-
-      Text(`${item.period} · ${item.museum}`)
-        .fontSize(11)
-        .fontColor('#8B7355')
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#2E241A')
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 10, bottom: 4 })
         .width('100%')
+
+      Row() {
+        Text(item.period && item.period.length > 0 ? item.period : '年代未知')
+          .fontSize(11)
+          .fontColor('#8B7355')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .width('100%')
+
+      Row() {
+        Text(item.type && item.type.length > 0 ? item.type : '未知')
+          .fontSize(11)
+          .fontColor('#9A6C4A')
+          .backgroundColor('#F4E9DE')
+          .borderRadius(12)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(item.material && item.material.length > 0 ? item.material : '未知')
+          .fontSize(11)
+          .fontColor('#9A6C4A')
+          .backgroundColor('#F4E9DE')
+          .borderRadius(12)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .margin({ left: 6 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+      .margin({ top: 8 })
     }
-    .padding(8)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(8)
-    .shadow({ radius: 6, color: '#18000000', offsetY: 2 })
+    .padding(10)
+    .backgroundColor('#FFFDF8')
+    .borderRadius(18)
+    .shadow({ radius: 12, color: '#18000000', offsetY: 5 })
     .onClick(() => {
       router.pushUrl({ url: 'pages/ArtifactDetailPage', params: { objectId: item.id } });
     })
@@ -485,35 +678,46 @@ export struct HomePage {
   @Builder ListView(item: Artifact) {
     Row() {
       Image(item.imageUrl)
-        .width(80).height(80)
-        .objectFit(ImageFit.Cover)
-        .borderRadius(6)
+        .width(88)
+        .height(88)
+        .objectFit(ImageFit.Contain)
+        .backgroundColor('#F1E6D7')
+        .borderRadius(14)
 
       Column() {
         Text(item.title)
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#3A3A3A')
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#2E241A')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${item.period} | ${item.type} | ${item.material}`)
+
+        Text(`${item.period} · ${item.type}`)
           .fontSize(12)
           .fontColor('#8B7355')
-          .margin({ top: 4 })
-        Text(item.museum)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 7 })
+
+        Text(item.material)
           .fontSize(12)
-          .fontColor('#8B7355')
-          .margin({ top: 2 })
+          .fontColor('#9A6C4A')
+          .backgroundColor('#F4E9DE')
+          .borderRadius(12)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .margin({ top: 8 })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      .margin({ left: 10 })
+      .margin({ left: 12 })
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(8)
-    .shadow({ radius: 4, color: '#15000000', offsetY: 2 })
+    .backgroundColor('#FFFDF8')
+    .borderRadius(18)
+    .shadow({ radius: 10, color: '#16000000', offsetY: 5 })
     .onClick(() => {
       router.pushUrl({ url: 'pages/ArtifactDetailPage', params: { objectId: item.id } });
     })
@@ -521,33 +725,33 @@ export struct HomePage {
 
   @Builder FilterBar(config: FilterConfig) {
     Row() {
-      // ===== 固定标签（不参与滚动） =====
       Text(config.label)
         .fontSize(12)
-        .fontColor('#8B7355')
-        .width(40)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#7B6245')
+        .width(36)
         .textAlign(TextAlign.Start)
         .margin({ right: 8 })
 
-      // ===== 可滚动的选项区 =====
       Scroll() {
         Row() {
           ForEach(config.options, (option: string) => {
             Text(option)
-              .fontSize(12)
-              .fontColor(config.value === option ? '#FFFFFF' : '#3A3A3A')
-              .backgroundColor(config.value === option ? '#C05040' : '#F2EDE8')
+              .fontSize(11)
+              .fontColor(config.value === option ? '#FFFFFF' : '#6F5740')
+              .fontWeight(config.value === option ? FontWeight.Medium : FontWeight.Normal)
+              .backgroundColor(config.value === option ? '#B94735' : '#F4E9DE')
               .borderRadius(12)
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .margin({ right: 4 })
+              .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+              .margin({ right: 5 })
               .onClick(() => { config.onChange(option); })
           }, (option: string) => option)
         }
-        .padding({ left: 0, right: 8 })
+        .padding({ left: 0, right: 4 })
       }
       .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)      // 关闭滚动条
-      .layoutWeight(1)                // 占满剩余空间
+      .scrollBar(BarState.Off)
+      .layoutWeight(1)
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)

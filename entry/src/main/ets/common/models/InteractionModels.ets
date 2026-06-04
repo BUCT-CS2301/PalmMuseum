@@ -25,6 +25,10 @@ export interface CommentItem {
   artifactId: string;
   artifactTitle: string;
   username: string;
+  displayName?: string;
+  profileUsername?: string;
+  userId?: string;
+  avatar?: string;
   content: string;
   createdAt: string;
   status: ReviewStatus;

@@ -10,6 +10,7 @@ import {
 } from '../common/models/InteractionModels';
 import {
   PublicHomepageData,
+  PublicDataAvailability,
   PublicHomepageService,
   PublicUserProfile,
   VisibleConfig
@@ -24,6 +25,9 @@ export struct OtherProfilePage {
   @State isSelf: boolean = false;
   @State isLoading: boolean = true;
   @State avatarLoadFailed: boolean = false;
+  @State fallbackNickname: string = '';
+  @State fallbackAvatar: string = '';
+  @State fallbackUserId: string = '';
 
   @State profile: PublicUserProfile = {
     userId: '',
@@ -47,6 +51,13 @@ export struct OtherProfilePage {
     uploads: true
   };
 
+  @State availability: PublicDataAvailability = {
+    favorites: true,
+    likes: true,
+    comments: true,
+    uploads: true
+  };
+
   @State favorites: FavoriteItem[] = [];
   @State likes: LikeItem[] = [];
   @State comments: CommentItem[] = [];
@@ -55,11 +66,22 @@ export struct OtherProfilePage {
   aboutToAppear() {
     const params = router.getParams() as Record<string, string>;
 
-    if (params && params.username) {
-      this.username = params.username;
+    if (params) {
+      this.username = params.username || '';
+      this.fallbackNickname = params.nickname || '';
+      this.fallbackAvatar = params.avatar || '';
+      this.fallbackUserId = params.userId || '';
       this.currentUsername = AppStorage.Get('username') as string || '';
-      this.isSelf = this.username === this.currentUsername;
-      this.loadData();
+      this.isSelf = !!this.username && this.username === this.currentUsername;
+      this.applyFallbackProfile();
+      if (this.username) {
+        this.loadData();
+      } else if (this.hasFallbackProfile()) {
+        this.isLoading = false;
+      } else {
+        promptAction.showToast({ message: '用户不存在' });
+        router.back();
+      }
     } else {
       promptAction.showToast({ message: '用户不存在' });
       router.back();
@@ -477,10 +499,31 @@ export struct OtherProfilePage {
       console.info(`[OtherProfilePage] 加载主页成功 username=${this.username}`);
     } catch (error) {
       console.error(`[OtherProfilePage] 加载用户主页失败 ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '加载失败' });
+      this.applyFallbackProfile();
+      if (!this.hasFallbackProfile()) {
+        promptAction.showToast({ message: '加载失败' });
+      }
     } finally {
       this.isLoading = false;
     }
+  }
+
+  private hasFallbackProfile(): boolean {
+    return !!this.username || !!this.fallbackNickname || !!this.fallbackAvatar || !!this.fallbackUserId;
+  }
+
+  private applyFallbackProfile(): void {
+    if (!this.hasFallbackProfile()) {
+      return;
+    }
+
+    this.profile = {
+      userId: this.profile.userId || this.fallbackUserId,
+      username: this.profile.username || this.username,
+      nickname: this.profile.nickname || this.fallbackNickname || this.username,
+      avatar: this.profile.avatar || this.fallbackAvatar,
+      bio: this.profile.bio || (this.isSelf ? '这是我的主页' : '留言用户')
+    };
   }
 
   private getSafeImageUrl(imageUrl: string): ResourceStr {

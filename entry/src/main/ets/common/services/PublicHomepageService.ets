@@ -6,8 +6,25 @@ import {
   PrivacySettings,
   UploadedPhotoItem
 } from '../models/InteractionModels';
+import { HttpApi } from '../network/HttpApi';
 import { interactionStore } from '../store/InteractionStore';
 import { PrivacyService } from './PrivacyService';
+
+interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+interface PublicProfileResponseData {
+  objectId?: string;
+  username?: string;
+  nickname?: string;
+  avatar?: string;
+  bio?: string;
+}
+
+type PublicProbeData = Object | Object[] | null;
 
 export interface PublicUserProfile {
   userId: string;
@@ -24,10 +41,38 @@ export interface VisibleConfig {
   uploads: boolean;
 }
 
+export interface PublicDataAvailability {
+  favorites: boolean;
+  likes: boolean;
+  comments: boolean;
+  uploads: boolean;
+}
+
+interface FavoriteSectionLoadResult {
+  items: FavoriteItem[];
+  available: boolean;
+}
+
+interface LikeSectionLoadResult {
+  items: LikeItem[];
+  available: boolean;
+}
+
+interface CommentSectionLoadResult {
+  items: CommentItem[];
+  available: boolean;
+}
+
+interface UploadSectionLoadResult {
+  items: UploadedPhotoItem[];
+  available: boolean;
+}
+
 export interface PublicHomepageData {
   profile: PublicUserProfile;
   privacy: PrivacySettings;
   visible: VisibleConfig;
+  availability: PublicDataAvailability;
   favorites: FavoriteItem[];
   likes: LikeItem[];
   comments: CommentItem[];
@@ -35,6 +80,177 @@ export interface PublicHomepageData {
 }
 
 export class PublicHomepageService {
+  private static buildFallbackProfile(username: string, isSelf: boolean): PublicUserProfile {
+    return {
+      userId: '',
+      username: username,
+      nickname: username,
+      avatar: '',
+      bio: isSelf ? '这是我的主页' : '掌上博物馆用户'
+    };
+  }
+
+  private static async getPublicProfile(username: string, isSelf: boolean): Promise<PublicUserProfile> {
+    try {
+      const response = await HttpApi.get<ApiResponse<PublicProfileResponseData>>(`/users/${username}/profile`);
+      if (response.code === 200 && response.data) {
+        return {
+          userId: response.data.objectId || '',
+          username: response.data.username || username,
+          nickname: response.data.nickname || response.data.username || username,
+          avatar: response.data.avatar || '',
+          bio: response.data.bio || (isSelf ? '这是我的主页' : '掌上博物馆用户')
+        };
+      }
+    } catch (error) {
+      console.error(
+        `[PublicHomepageService] getPublicProfile failed username=${username} ${JSON.stringify(error)}`
+      );
+    }
+
+    return PublicHomepageService.buildFallbackProfile(username, isSelf);
+  }
+
+  private static isPublicDataDenied(error: Error): boolean {
+    const message = error.message || '';
+    return message.indexOf('只能查看自己的用户数据') > -1
+      || message.indexOf('只能查看自己的上传记录') > -1;
+  }
+
+  private static async probePublicSection(url: string, isSelf: boolean): Promise<boolean> {
+    if (isSelf) {
+      return true;
+    }
+
+    try {
+      const response = await HttpApi.get<ApiResponse<PublicProbeData>>(url);
+      return response.code === 200;
+    } catch (error) {
+      const err = error as Error;
+      if (PublicHomepageService.isPublicDataDenied(err)) {
+        return false;
+      }
+
+      throw err;
+    }
+  }
+
+  private static async loadFavorites(
+    username: string,
+    enabled: boolean,
+    isSelf: boolean
+  ): Promise<FavoriteSectionLoadResult> {
+    if (!enabled) {
+      const disabledResult: FavoriteSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return disabledResult;
+    }
+
+    const available = await PublicHomepageService.probePublicSection(`/users/${username}/favorites`, isSelf);
+    if (!available) {
+      const unavailableResult: FavoriteSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return unavailableResult;
+    }
+
+    const result: FavoriteSectionLoadResult = {
+      items: await interactionStore.getFavorites(username),
+      available: true
+    };
+    return result;
+  }
+
+  private static async loadLikes(
+    username: string,
+    enabled: boolean,
+    isSelf: boolean
+  ): Promise<LikeSectionLoadResult> {
+    if (!enabled) {
+      const disabledResult: LikeSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return disabledResult;
+    }
+
+    const available = await PublicHomepageService.probePublicSection(`/users/${username}/likes`, isSelf);
+    if (!available) {
+      const unavailableResult: LikeSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return unavailableResult;
+    }
+
+    const result: LikeSectionLoadResult = {
+      items: await interactionStore.getLikes(username),
+      available: true
+    };
+    return result;
+  }
+
+  private static async loadComments(
+    username: string,
+    enabled: boolean,
+    isSelf: boolean
+  ): Promise<CommentSectionLoadResult> {
+    if (!enabled) {
+      const disabledResult: CommentSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return disabledResult;
+    }
+
+    const available = await PublicHomepageService.probePublicSection(`/users/${username}/comments`, isSelf);
+    if (!available) {
+      const unavailableResult: CommentSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return unavailableResult;
+    }
+
+    const result: CommentSectionLoadResult = {
+      items: await interactionStore.getUserComments(username),
+      available: true
+    };
+    return result;
+  }
+
+  private static async loadUploads(
+    username: string,
+    enabled: boolean,
+    isSelf: boolean
+  ): Promise<UploadSectionLoadResult> {
+    if (!enabled) {
+      const disabledResult: UploadSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return disabledResult;
+    }
+
+    const available = await PublicHomepageService.probePublicSection(`/users/${username}/uploads`, isSelf);
+    if (!available) {
+      const unavailableResult: UploadSectionLoadResult = {
+        items: [],
+        available: false
+      };
+      return unavailableResult;
+    }
+
+    const result: UploadSectionLoadResult = {
+      items: await interactionStore.getUploads(username),
+      available: true
+    };
+    return result;
+  }
+
   static async getPublicHomepage(
     username: string,
     currentUsername: string
@@ -52,30 +268,16 @@ export class PublicHomepageService {
       showPhotos: true
     };
 
-    if (isSelf) {
-      // 自己查看自己主页，不受隐私限制。
-      privacy = {
-        showFavorites: true,
-        showLikes: true,
-        showComments: true,
-        showPhotos: true
-      };
-    } else {
+    if (!isSelf) {
       try {
-        // 关键修复：
-        // 他人主页的可见性必须读取后端真实隐私设置，
-        // 不能再用 interactionStore.getPrivacy(username) 的本地模拟数据。
         privacy = await PrivacyService.getUserPrivacy(username);
-
         console.info(
-          `[PublicHomepageService] 读取后端隐私设置 username=${username}, privacy=${JSON.stringify(privacy)}`
+          `[PublicHomepageService] getUserPrivacy username=${username}, privacy=${JSON.stringify(privacy)}`
         );
       } catch (error) {
         console.error(
-          `[PublicHomepageService] 读取后端隐私设置失败 username=${username}, error=${JSON.stringify(error)}`
+          `[PublicHomepageService] getUserPrivacy failed username=${username} ${JSON.stringify(error)}`
         );
-
-        // 读取失败时为了保护隐私，默认全部不可见。
         privacy = {
           showFavorites: false,
           showLikes: false,
@@ -92,36 +294,28 @@ export class PublicHomepageService {
       uploads: isSelf || privacy.showPhotos
     };
 
-    const favorites: FavoriteItem[] = visible.favorites
-      ? await interactionStore.getFavorites(username)
-      : [];
+    const favoritesResult = await PublicHomepageService.loadFavorites(username, visible.favorites, isSelf);
+    const likesResult = await PublicHomepageService.loadLikes(username, visible.likes, isSelf);
+    const commentsResult = await PublicHomepageService.loadComments(username, visible.comments, isSelf);
+    const uploadsResult = await PublicHomepageService.loadUploads(username, visible.uploads, isSelf);
 
-    const likes: LikeItem[] = visible.likes
-      ? await interactionStore.getLikes(username)
-      : [];
+    const availability: PublicDataAvailability = {
+      favorites: favoritesResult.available,
+      likes: likesResult.available,
+      comments: commentsResult.available,
+      uploads: uploadsResult.available
+    };
 
-    const comments: CommentItem[] = visible.comments
-      ? await interactionStore.getUserComments(username)
-      : [];
-
-    const uploads: UploadedPhotoItem[] = visible.uploads
-      ? await interactionStore.getUploads(username)
-      : [];
-
-    return {
-      profile: {
-        userId: '',
-        username: username,
-        nickname: username,
-        avatar: '',
-        bio: isSelf ? '这是我的主页' : '掌上博物馆用户'
-      },
+    const result: PublicHomepageData = {
+      profile: await PublicHomepageService.getPublicProfile(username, isSelf),
       privacy: privacy,
       visible: visible,
-      favorites: favorites,
-      likes: likes,
-      comments: comments,
-      uploads: uploads
+      availability: availability,
+      favorites: favoritesResult.items,
+      likes: likesResult.items,
+      comments: commentsResult.items,
+      uploads: uploadsResult.items
     };
+    return result;
   }
 }

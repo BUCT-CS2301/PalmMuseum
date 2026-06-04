@@ -460,6 +460,6 @@ export struct ProfilePage {
     this.targetUsername = '';
 
     promptAction.showToast({ message: '已退出登录' });
-    router.replaceUrl({ url: 'pages/LoginPage' });
+    router.pushUrl({ url: 'pages/LoginPage' });
   }
 }

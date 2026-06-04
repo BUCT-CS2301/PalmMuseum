@@ -52,6 +52,13 @@ interface CommentCreateRequestBody {
   replyTo?: string;
 }
 
+interface PublicCommentProfileData {
+  profileUsername: string;
+  displayName: string;
+  userId: string;
+  avatar: string;
+}
+
 type RawValue = Object | Object[] | string | number | boolean | null | undefined;
 type RawRecord = Record<string, RawValue>;
 
@@ -261,6 +268,46 @@ class InteractionStore {
     return ReviewStatus.Pending;
   }
 
+  private extractCommentChildren(record: RawRecord): Object[] {
+    if (Array.isArray(record['replies'])) {
+      return record['replies'] as Object[];
+    }
+    if (Array.isArray(record['children'])) {
+      return record['children'] as Object[];
+    }
+    if (Array.isArray(record['replyList'])) {
+      return record['replyList'] as Object[];
+    }
+    if (Array.isArray(record['subComments'])) {
+      return record['subComments'] as Object[];
+    }
+    return [];
+  }
+
+  private buildCommentProfile(
+    record: RawRecord,
+    fallbackUsername: string = '',
+    fallbackDisplayName: string = ''
+  ): PublicCommentProfileData {
+    const profileUsername = this.readString(
+      record,
+      ['username', 'authorUsername', 'createBy', 'createdBy', 'account', 'loginName'],
+      fallbackUsername
+    );
+    const displayName = this.readString(
+      record,
+      ['userName', 'nickname', 'nickName', 'authorName', 'displayName'],
+      fallbackDisplayName || profileUsername || fallbackUsername
+    );
+
+    return {
+      profileUsername: profileUsername,
+      displayName: displayName || profileUsername || fallbackUsername || '匿名用户',
+      userId: this.readString(record, ['userId', 'authorId', 'commentUserId'], ''),
+      avatar: this.readString(record, ['avatar', 'userAvatar', 'authorAvatar'], '')
+    };
+  }
+
   private async getData<T>(url: string): Promise<T> {
     const response = await HttpApi.get<ApiResponse<T>>(url);
     if (response.code !== 200) {
@@ -322,22 +369,87 @@ class InteractionStore {
     };
   }
 
-  private mapCommentItem(data: Object, fallbackArtifactId: string = ''): CommentItem {
+  private mapCommentItem(
+    data: Object,
+    fallbackArtifactId: string = '',
+    fallbackStatus: ReviewStatus = ReviewStatus.Pending,
+    fallbackUsername: string = '',
+    fallbackDisplayName: string = '',
+    fallbackParentId: string = '',
+    fallbackReplyTo: string = ''
+  ): CommentItem {
     const record = this.readRecord(data);
     const commentId = this.readString(record, ['commentId', 'objectId', 'id'], '');
+    const rawStatus = record['status'] || record['reviewStatus'] || record['auditStatus'];
+    const status = rawStatus !== undefined && rawStatus !== null
+      ? this.toReviewStatus(rawStatus)
+      : fallbackStatus;
+    const profile = this.buildCommentProfile(record, fallbackUsername, fallbackDisplayName);
     return {
       id: commentId,
       artifactId: this.readString(record, ['artifactId', 'artifactObjectId'], fallbackArtifactId),
       artifactTitle: this.readString(record, ['artifactTitle', 'title'], ''),
-      username: this.readString(record, ['username', 'nickname', 'authorName'], ''),
+      username: profile.profileUsername || profile.displayName,
+      displayName: profile.displayName,
+      profileUsername: profile.profileUsername,
+      userId: profile.userId,
+      avatar: profile.avatar,
       content: this.readString(record, ['content', 'commentContent'], ''),
       createdAt: this.readString(record, ['createTime', 'createdAt'], new Date().toISOString()),
-      status: this.toReviewStatus(record['status'] || record['reviewStatus'] || record['auditStatus']),
-      parentId: this.readString(record, ['parentId'], ''),
-      replyTo: this.readString(record, ['replyTo'], ''),
-      likeCount: this.readNumber(record, ['likeCount'], 0),
-      likedByCurrentUser: this.readBoolean(record, ['isLiked', 'likedByCurrentUser'], false)
+      status: status,
+      parentId: this.readString(
+        record,
+        ['parentId', 'parentCommentId', 'rootCommentId', 'rootId', 'replyCommentId'],
+        fallbackParentId
+      ),
+      replyTo: this.readString(
+        record,
+        ['replyTo', 'replyToUsername', 'replyUserName', 'targetUsername', 'targetUserName', 'replyNickname'],
+        fallbackReplyTo
+      ),
+      likeCount: this.readNumber(record, ['likeCount', 'likes'], 0),
+      likedByCurrentUser: this.readBoolean(record, ['isLiked', 'likedByCurrentUser', 'liked'], false)
     };
+  }
+
+  private flattenCommentItems(
+    data: Object,
+    fallbackArtifactId: string = '',
+    fallbackStatus: ReviewStatus = ReviewStatus.Pending,
+    fallbackUsername: string = '',
+    fallbackDisplayName: string = '',
+    fallbackParentId: string = '',
+    fallbackReplyTo: string = ''
+  ): CommentItem[] {
+    const current = this.mapCommentItem(
+      data,
+      fallbackArtifactId,
+      fallbackStatus,
+      fallbackUsername,
+      fallbackDisplayName,
+      fallbackParentId,
+      fallbackReplyTo
+    );
+    if (!current.id) {
+      return [];
+    }
+
+    const items: CommentItem[] = [current];
+    const children = this.extractCommentChildren(this.readRecord(data));
+    const childReplyTarget = current.displayName || current.username;
+    children.forEach((child: Object) => {
+      const childItems = this.flattenCommentItems(
+        child,
+        current.artifactId || fallbackArtifactId,
+        fallbackStatus,
+        '',
+        '',
+        current.id,
+        childReplyTarget
+      );
+      childItems.forEach((item: CommentItem) => items.push(item));
+    });
+    return items;
   }
 
   private mapUploadItem(data: Object): UploadedPhotoItem {
@@ -399,7 +511,7 @@ class InteractionStore {
     const data = await this.getData<RawValue>(`/users/${username}/comments`);
     return this.sortByDateDesc(
       this.extractArray<Object>(data)
-        .map((item: Object) => this.mapCommentItem(item))
+        .map((item: Object) => this.mapCommentItem(item, '', ReviewStatus.Pending, username, username))
         .filter((item: CommentItem) => !!item.id)
     );
   }
@@ -695,9 +807,15 @@ class InteractionStore {
   async getCommentsForArtifact(artifactId: string, username: string = ''): Promise<CommentItem[]> {
     try {
       const data = await this.getData<RawValue>(`/artifacts/${artifactId}/comments`);
-      const publicComments = this.extractArray<Object>(data)
-        .map((item: Object) => this.mapCommentItem(item, artifactId))
-        .filter((item: CommentItem) => !!item.id);
+      const publicComments: CommentItem[] = [];
+      this.extractArray<Object>(data).forEach((item: Object) => {
+        const flattenedItems = this.flattenCommentItems(item, artifactId, ReviewStatus.Approved);
+        flattenedItems.forEach((comment: CommentItem) => {
+          if (comment.id) {
+            publicComments.push(comment);
+          }
+        });
+      });
 
       if (!username) {
         return this.sortByDateDesc(publicComments);
