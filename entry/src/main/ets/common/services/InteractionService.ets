@@ -94,6 +94,22 @@ interface BackendCommentRecord {
   likeCount?: number;
   liked?: boolean;
   isLiked?: boolean;
+  replies?: BackendCommentReplyRecord[];
+}
+
+interface BackendCommentReplyRecord {
+  objectId?: string;
+  commentId?: string;
+  id?: string;
+  userName?: string;
+  username?: string;
+  nickname?: string;
+  content?: string;
+  createTime?: string;
+  createdAt?: string;
+  likeCount?: number;
+  liked?: boolean;
+  isLiked?: boolean;
 }
 
 interface BackendUploadRecord {
@@ -288,6 +304,57 @@ export class InteractionService {
     return InteractionService.sortByCreatedAtDesc(Array.from(merged.values()));
   }
 
+  private static isSameComment(left: CommentItem, right: CommentItem): boolean {
+    if (left.id === right.id) {
+      return true;
+    }
+    if (left.artifactId !== right.artifactId || left.content !== right.content) {
+      return false;
+    }
+    if ((left.parentId || '') !== (right.parentId || '') || (left.replyTo || '') !== (right.replyTo || '')) {
+      return false;
+    }
+    const leftTime = new Date(left.createdAt).getTime();
+    const rightTime = new Date(right.createdAt).getTime();
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return true;
+    }
+    return Math.abs(leftTime - rightTime) <= 5 * 60 * 1000;
+  }
+
+  private static mergeComments(primary: CommentItem[], secondary: CommentItem[]): CommentItem[] {
+    const merged: CommentItem[] = [...primary];
+    secondary.forEach((item: CommentItem) => {
+      const exists = merged.some((current: CommentItem) => InteractionService.isSameComment(current, item));
+      if (!exists) {
+        merged.push(item);
+      }
+    });
+    return InteractionService.sortByCreatedAtDesc(merged);
+  }
+
+  private static async syncPublicCommentsFromArtifact(comments: CommentItem[]): Promise<void> {
+    const userCommentMap = new Map<string, CommentItem[]>();
+    for (let index = 0; index < comments.length; index += 1) {
+      const item = comments[index];
+      if (!item.username || item.status !== ReviewStatus.Approved) {
+        continue;
+      }
+      const current = userCommentMap.get(item.username) || [];
+      current.push(item);
+      userCommentMap.set(item.username, current);
+    }
+
+    const usernames = Array.from(userCommentMap.keys());
+    for (let index = 0; index < usernames.length; index += 1) {
+      const username = usernames[index];
+      const cached = await interactionStore.getPublicCommentsByAliases([username]);
+      const current = userCommentMap.get(username) || [];
+      const merged = InteractionService.mergeComments(cached, current);
+      await interactionStore.savePublicComments(username, merged);
+    }
+  }
+
   private static buildMetaFromFavoriteItems(items: FavoriteItem[]): Map<string, ArtifactMeta> {
     const metaMap = new Map<string, ArtifactMeta>();
     items.forEach((item: FavoriteItem) => {
@@ -479,12 +546,17 @@ export class InteractionService {
     });
   }
 
-  private static mapComment(record: BackendCommentRecord): CommentItem | null {
+  private static mapComment(
+    record: BackendCommentRecord,
+    fallbackArtifactId: string = '',
+    fallbackStatus: ReviewStatus = ReviewStatus.Pending
+  ): CommentItem | null {
     const id = InteractionService.getStringValue(record, ['objectId', 'commentId', 'id']);
-    const artifactId = InteractionService.getStringValue(record, ['artifactId', 'objectRelicId']);
+    const artifactId = InteractionService.getStringValue(record, ['artifactId', 'objectRelicId']) || fallbackArtifactId;
     if (!id || !artifactId) {
       return null;
     }
+    const rawStatus = InteractionService.getStringValue(record, ['status', 'auditStatus']);
     return {
       id: id,
       artifactId: artifactId,
@@ -494,14 +566,50 @@ export class InteractionService {
       createdAt: InteractionService.normalizeTime(
         InteractionService.getStringValue(record, ['createTime', 'createdAt'])
       ),
-      status: InteractionService.toReviewStatus(
-        InteractionService.getStringValue(record, ['status', 'auditStatus']) || 'PENDING'
-      ),
+      status: rawStatus ? InteractionService.toReviewStatus(rawStatus) : fallbackStatus,
       parentId: InteractionService.getStringValue(record, ['parentId', 'parentCommentId']),
       replyTo: InteractionService.getStringValue(record, ['replyTo', 'replyToUser']),
       likeCount: InteractionService.getNumberValue(record, ['likeCount']),
       likedByCurrentUser: InteractionService.getBooleanValue(record, ['isLiked', 'liked'])
     };
+  }
+
+  private static mapCommentThread(
+    record: BackendCommentRecord,
+    artifactId: string = '',
+    fallbackStatus: ReviewStatus = ReviewStatus.Pending
+  ): CommentItem[] {
+    const result: CommentItem[] = [];
+    const parent = InteractionService.mapComment(record, artifactId, fallbackStatus);
+    if (!parent) {
+      return result;
+    }
+    result.push(parent);
+    const replies = record.replies || [];
+    for (let index = 0; index < replies.length; index += 1) {
+      const replyRecord = replies[index];
+      const replyId = InteractionService.getStringValue(replyRecord, ['objectId', 'commentId', 'id']);
+      if (!replyId) {
+        continue;
+      }
+      const replyItem: CommentItem = {
+        id: replyId,
+        artifactId: parent.artifactId,
+        artifactTitle: parent.artifactTitle,
+        username: InteractionService.getStringValue(replyRecord, ['username', 'userName', 'nickname']) || '匿名用户',
+        content: InteractionService.getStringValue(replyRecord, ['content']),
+        createdAt: InteractionService.normalizeTime(
+          InteractionService.getStringValue(replyRecord, ['createTime', 'createdAt'])
+        ),
+        status: fallbackStatus,
+        parentId: parent.id,
+        replyTo: parent.username,
+        likeCount: InteractionService.getNumberValue(replyRecord, ['likeCount']),
+        likedByCurrentUser: InteractionService.getBooleanValue(replyRecord, ['isLiked', 'liked'])
+      };
+      result.push(replyItem);
+    }
+    return result;
   }
 
   private static mapUpload(record: BackendUploadRecord): UploadedPhotoItem | null {
@@ -588,8 +696,16 @@ export class InteractionService {
     return interactionStore.getLikeSummary(artifactId, username);
   }
 
+  static async syncLikeCountFromArtifact(artifact: Artifact): Promise<void> {
+    if (!artifact || typeof artifact.popularity !== 'number' || artifact.popularity < 0) {
+      return;
+    }
+    await interactionStore.setLikeCount(artifact.id, artifact.popularity);
+  }
+
   static async toggleLike(artifact: Artifact, username: string): Promise<InteractionSummary> {
     const localBefore = await interactionStore.getLikeSummary(artifact.id, username);
+    const targetActive = !localBefore.active;
     try {
       const body: EmptyRequestBody = {};
       const res = await HttpApi.post<ApiResponse<ToggleResponseData>>(
@@ -599,17 +715,38 @@ export class InteractionService {
       if (res.code !== 200) {
         throw new Error(res.message || '点赞失败');
       }
-      const remoteActive = res.data && res.data.isLiked !== undefined ? !!res.data.isLiked : !localBefore.active;
-      if (remoteActive !== localBefore.active) {
-        await interactionStore.toggleLike(artifact.id, username, artifact);
+      let finalActive = targetActive;
+      let useLocalCount = false;
+      if (res.data && res.data.isLiked !== undefined) {
+        finalActive = !!res.data.isLiked;
       }
+      if (finalActive !== targetActive) {
+        console.warn(`[InteractionService] 点赞状态与用户操作不一致，使用本地兜底 artifactId=${artifact.id}`);
+        finalActive = targetActive;
+        useLocalCount = true;
+      }
+      await interactionStore.syncLikeState(artifact.id, username, finalActive, artifact);
+      const localAfter = await interactionStore.getLikeSummary(artifact.id, username);
+      let shouldUseRemoteCount = false;
+      if (res.data && res.data.likeCount !== undefined && !useLocalCount) {
+        if (finalActive && res.data.likeCount >= localAfter.count) {
+          shouldUseRemoteCount = true;
+        }
+        if (!finalActive && res.data.likeCount <= localAfter.count) {
+          shouldUseRemoteCount = true;
+        }
+      }
+      if (shouldUseRemoteCount && res.data && res.data.likeCount !== undefined) {
+        await interactionStore.setLikeCount(artifact.id, res.data.likeCount);
+      }
+      const summaryAfterCountSync = await interactionStore.getLikeSummary(artifact.id, username);
       return {
-        active: remoteActive,
-        count: res.data && res.data.likeCount ? res.data.likeCount : (await interactionStore.getLikeSummary(artifact.id, username)).count
+        active: finalActive,
+        count: shouldUseRemoteCount ? summaryAfterCountSync.count : localAfter.count
       };
     } catch (error) {
       console.error(`[InteractionService] 点赞接口失败，改用本地兜底 ${JSON.stringify(error)}`);
-      return interactionStore.toggleLike(artifact.id, username, artifact);
+      return interactionStore.syncLikeState(artifact.id, username, targetActive, artifact);
     }
   }
 
@@ -626,7 +763,31 @@ export class InteractionService {
         throw new Error(res.message || '获取点赞列表失败');
       }
       const records = InteractionService.extractList<BackendLikeRecord>(res.data, ['likes']);
-      return InteractionService.mapLikes(records, localLikes);
+      const remoteLikes = await InteractionService.mapLikes(records, localLikes);
+      const mergedMap = new Map<string, LikeItem>();
+      remoteLikes.forEach((item: LikeItem) => {
+        mergedMap.set(item.artifactId, item);
+      });
+      localLikes.forEach((item: LikeItem) => {
+        mergedMap.set(item.artifactId, item);
+      });
+      const result: LikeItem[] = [];
+      const candidates = Array.from(mergedMap.values());
+      for (let index = 0; index < candidates.length; index += 1) {
+        const item = candidates[index];
+        const localSummary = await interactionStore.getLikeSummary(item.artifactId, username);
+        const hasLocalRecord = await interactionStore.hasLikeRecord(item.artifactId);
+        if (localSummary.active || !hasLocalRecord) {
+          result.push(item);
+        }
+      }
+      const sortedLikes = [...result].sort((left: LikeItem, right: LikeItem) => {
+        const leftTime = new Date(left.likedAt).getTime();
+        const rightTime = new Date(right.likedAt).getTime();
+        return rightTime - leftTime;
+      });
+      await interactionStore.savePublicLikes(username, sortedLikes);
+      return sortedLikes;
     } catch (error) {
       console.error(`[InteractionService] 获取点赞列表失败，改用本地兜底 ${JSON.stringify(error)}`);
       return localLikes;
@@ -681,14 +842,9 @@ export class InteractionService {
     groupName: string = FAVORITE_GROUPS[0]
   ): Promise<InteractionSummary> {
     const currentSummary = await InteractionService.getFavoriteSummary(artifact.id, username);
-    const localSummary = await interactionStore.getFavoriteSummary(artifact.id, username);
 
     if (currentSummary.active) {
-      await interactionStore.removeFavorite(artifact.id, username);
-      return {
-        active: false,
-        count: Math.max(currentSummary.count - 1, 0)
-      };
+      return interactionStore.syncFavoriteState(artifact, username, false, groupName);
     }
 
     try {
@@ -706,16 +862,24 @@ export class InteractionService {
       if (res.code !== 200) {
         throw new Error(res.message || '收藏失败');
       }
-      if (!localSummary.active) {
-        await interactionStore.toggleFavorite(artifact, username, groupName);
+      let finalActive = true;
+      let useLocalCount = false;
+      if (res.data && res.data.isFavorited !== undefined) {
+        finalActive = !!res.data.isFavorited;
       }
+      if (!finalActive) {
+        finalActive = true;
+        useLocalCount = true;
+      }
+      await interactionStore.syncFavoriteState(artifact, username, finalActive, groupName);
+      const localAfter = await interactionStore.getFavoriteSummary(artifact.id, username);
       return {
-        active: res.data && res.data.isFavorited !== undefined ? !!res.data.isFavorited : true,
-        count: res.data && res.data.favoriteCount ? res.data.favoriteCount : (await interactionStore.getFavoriteSummary(artifact.id, username)).count
+        active: finalActive,
+        count: res.data && res.data.favoriteCount !== undefined && !useLocalCount ? res.data.favoriteCount : localAfter.count
       };
     } catch (error) {
       console.error(`[InteractionService] 收藏接口失败，改用本地兜底 ${JSON.stringify(error)}`);
-      return interactionStore.toggleFavorite(artifact, username, groupName);
+      return interactionStore.syncFavoriteState(artifact, username, true, groupName);
     }
   }
 
@@ -732,7 +896,28 @@ export class InteractionService {
         throw new Error(res.message || '获取收藏列表失败');
       }
       const records = InteractionService.extractList<BackendFavoriteRecord>(res.data, ['favorites']);
-      return InteractionService.mapFavorites(records, localFavorites);
+      const remoteFavorites = await InteractionService.mapFavorites(records, localFavorites);
+      const removedIds = await interactionStore.getRemovedFavoriteIds(username);
+      const mergedMap = new Map<string, FavoriteItem>();
+      remoteFavorites.forEach((item: FavoriteItem) => {
+        if (removedIds.indexOf(item.artifactId) === -1) {
+          mergedMap.set(item.artifactId, item);
+        }
+      });
+      localFavorites.forEach((item: FavoriteItem) => {
+        mergedMap.set(item.artifactId, item);
+      });
+      const mergedFavorites: FavoriteItem[] = [];
+      mergedMap.forEach((item: FavoriteItem) => {
+        mergedFavorites.push(item);
+      });
+      const sortedFavorites = mergedFavorites.sort((left: FavoriteItem, right: FavoriteItem) => {
+        const leftTime = new Date(left.createdAt).getTime();
+        const rightTime = new Date(right.createdAt).getTime();
+        return rightTime - leftTime;
+      });
+      await interactionStore.savePublicFavorites(username, sortedFavorites);
+      return sortedFavorites;
     } catch (error) {
       console.error(`[InteractionService] 获取收藏列表失败，改用本地兜底 ${JSON.stringify(error)}`);
       return localFavorites;
@@ -771,6 +956,23 @@ export class InteractionService {
   }
 
   static async moveFavoriteToGroup(artifactId: string, username: string, groupName: string): Promise<string> {
+    const currentGroup = await interactionStore.getFavoriteGroupForArtifact(username, artifactId);
+    if (currentGroup === groupName) {
+      return currentGroup;
+    }
+    const favorites = await InteractionService.getFavorites(username);
+    const target = favorites.find((item: FavoriteItem) => item.artifactId === artifactId);
+    if (target) {
+      await interactionStore.ensureFavoriteItem(username, {
+        artifactId: target.artifactId,
+        title: target.title,
+        imageUrl: target.imageUrl,
+        period: target.period,
+        museum: target.museum,
+        groupName: groupName,
+        createdAt: target.createdAt
+      });
+    }
     return interactionStore.moveFavoriteToGroup(artifactId, username, groupName);
   }
 
@@ -788,11 +990,19 @@ export class InteractionService {
         throw new Error(res.message || '获取评论列表失败');
       }
       const records = InteractionService.extractList<BackendCommentRecord>(res.data, ['comments']);
-      const remoteComments = records
-        .map((item: BackendCommentRecord) => InteractionService.mapComment(item))
-        .filter((item: CommentItem | null) => item !== null) as CommentItem[];
+      const remoteComments: CommentItem[] = [];
+      records.forEach((item: BackendCommentRecord) => {
+        const thread = InteractionService.mapCommentThread(item, artifactId, ReviewStatus.Approved);
+        for (let index = 0; index < thread.length; index += 1) {
+          remoteComments.push(thread[index]);
+        }
+      });
+      await InteractionService.syncPublicCommentsFromArtifact(remoteComments);
+      if (!username) {
+        return InteractionService.sortByCreatedAtDesc(remoteComments);
+      }
       const localPending = localComments.filter((item: CommentItem) => item.status !== ReviewStatus.Approved);
-      return InteractionService.mergeById(remoteComments, localPending);
+      return InteractionService.mergeComments(remoteComments, localPending);
     } catch (error) {
       console.error(`[InteractionService] 获取文物评论失败，改用本地兜底 ${JSON.stringify(error)}`);
       return localComments;
@@ -800,6 +1010,7 @@ export class InteractionService {
   }
 
   static async toggleCommentLike(commentId: string, username: string): Promise<InteractionSummary> {
+    const localBefore = await interactionStore.getCommentLikeSummary(commentId, username);
     try {
       const body: EmptyRequestBody = {};
       const res = await HttpApi.post<ApiResponse<ToggleResponseData>>(
@@ -809,9 +1020,14 @@ export class InteractionService {
       if (res.code !== 200) {
         throw new Error(res.message || '评论点赞失败');
       }
+      const remoteActive = res.data && res.data.isLiked !== undefined ? !!res.data.isLiked : !localBefore.active;
+      if (remoteActive !== localBefore.active) {
+        await interactionStore.syncCommentLikeState(commentId, username, remoteActive);
+      }
+      const localAfter = await interactionStore.getCommentLikeSummary(commentId, username);
       return {
-        active: res.data && res.data.isLiked !== undefined ? !!res.data.isLiked : true,
-        count: res.data && res.data.likeCount ? res.data.likeCount : 1
+        active: remoteActive,
+        count: res.data && res.data.likeCount !== undefined ? res.data.likeCount : localAfter.count
       };
     } catch (error) {
       console.error(`[InteractionService] 评论点赞失败，改用本地兜底 ${JSON.stringify(error)}`);
@@ -846,6 +1062,7 @@ export class InteractionService {
       if (res.code !== 200) {
         throw new Error(res.message || '评论提交失败');
       }
+      await interactionStore.addCommentMirror(artifact, username, content, parentId, replyTo);
       return {
         ok: true,
         message: res.message || '评论已提交'
@@ -872,8 +1089,9 @@ export class InteractionService {
       const remoteComments = records
         .map((item: BackendCommentRecord) => InteractionService.mapComment(item))
         .filter((item: CommentItem | null) => item !== null) as CommentItem[];
-      const localPending = localComments.filter((item: CommentItem) => item.status !== ReviewStatus.Approved);
-      return InteractionService.mergeById(remoteComments, localPending);
+      const mergedComments = InteractionService.mergeComments(remoteComments, localComments);
+      await interactionStore.savePublicComments(username, mergedComments);
+      return mergedComments;
     } catch (error) {
       console.error(`[InteractionService] 获取我的评论失败，改用本地兜底 ${JSON.stringify(error)}`);
       return localComments;
@@ -927,7 +1145,9 @@ export class InteractionService {
         .map((item: BackendUploadRecord) => InteractionService.mapUpload(item))
         .filter((item: UploadedPhotoItem | null) => item !== null) as UploadedPhotoItem[];
       const localPending = localUploads.filter((item: UploadedPhotoItem) => item.status !== ReviewStatus.Approved);
-      return InteractionService.mergeById(remoteUploads, localPending);
+      const mergedUploads = InteractionService.mergeById(remoteUploads, localPending);
+      await interactionStore.savePublicUploads(username, mergedUploads);
+      return mergedUploads;
     } catch (error) {
       console.error(`[InteractionService] 获取上传列表失败，改用本地兜底 ${JSON.stringify(error)}`);
       return localUploads;

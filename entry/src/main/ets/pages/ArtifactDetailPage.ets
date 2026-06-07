@@ -143,6 +143,7 @@ export struct ArtifactDetailPage {
     if (!this.artifact) {
       return;
     }
+    await InteractionService.syncLikeCountFromArtifact(this.artifact);
     if (this.isLogin && this.username) {
       await InteractionService.recordHistory(this.artifact, this.username);
       this.favoriteGroups = await InteractionService.getFavoriteGroups(this.username);
@@ -1303,10 +1304,6 @@ export struct ArtifactDetailPage {
       router.pushUrl({ url: 'pages/LoginPage' });
       return;
     }
-    if (item.likedByCurrentUser) {
-      this.showToast('你已经点赞过这条评论了');
-      return;
-    }
     const summary = await InteractionService.toggleCommentLike(item.id, this.username);
     this.comments = this.comments.map((comment: CommentItem) => {
       if (comment.id !== item.id) {
@@ -1334,7 +1331,7 @@ export struct ArtifactDetailPage {
     if (this.artifact) {
       this.comments = await InteractionService.getCommentsForArtifact(this.artifact.id, this.username);
     }
-    this.showToast('已点赞评论');
+    this.showToast(summary.active ? '已点赞评论' : '已取消评论点赞');
   }
 
   private async handleSubmitComment() {

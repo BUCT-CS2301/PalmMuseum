@@ -298,7 +298,12 @@ export struct MyFavoritesPage {
               .borderRadius(14)
               .margin({ right: 8, top: 10 })
               .onClick(async () => {
+                if (item.groupName === groupName) {
+                  promptAction.showToast({ message: `当前已在“${groupName}”` });
+                  return;
+                }
                 await InteractionService.moveFavoriteToGroup(item.artifactId, this.username, groupName);
+                this.editingArtifactId = '';
                 promptAction.showToast({ message: `已移到“${groupName}”` });
                 await this.loadFavorites();
               })

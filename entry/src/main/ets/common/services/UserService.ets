@@ -50,7 +50,7 @@ interface LoginResponseData {
   expiresIn: number;
   accessToken: string;
   refreshToken: string;
-  user?: CurrentUserData;
+  user?: BackendUserData;
 }
 
 interface RegisterRequestBody {
@@ -72,9 +72,9 @@ interface RegisterResponseData {
   createTime?: string;
 }
 
-interface CurrentUserData {
-  objectId: string;
-  username: string;
+interface BackendUserData {
+  objectId?: string;
+  username?: string;
   nickname?: string;
   avatar?: string;
   bio?: string;
@@ -108,7 +108,7 @@ interface HuaweiLoginResponseData {
   expiresIn: number;
   accessToken: string;
   refreshToken: string;
-  user?: CurrentUserData;
+  user?: BackendUserData;
 }
 
 interface AvatarBase64RequestBody {
@@ -122,6 +122,16 @@ interface AvatarUploadData {
 }
 
 export class UserService {
+  private static clearProfileStorage(): void {
+    AppStorage.SetOrCreate('userId', '');
+    AppStorage.SetOrCreate('username', '');
+    AppStorage.SetOrCreate('nickname', '');
+    AppStorage.SetOrCreate('avatar', '');
+    AppStorage.SetOrCreate('bio', '');
+    AppStorage.SetOrCreate('phone', '');
+    AppStorage.SetOrCreate('email', '');
+  }
+
   private static saveProfileToStorage(profile: UserProfile): void {
     AppStorage.SetOrCreate('userId', profile.objectId || '');
     AppStorage.SetOrCreate('username', profile.username || '');
@@ -184,7 +194,9 @@ export class UserService {
           refreshToken: res.data.refreshToken
         };
       } catch (e) {
+        UserService.clearProfileStorage();
         AppStorage.SetOrCreate('username', username.trim());
+        AppStorage.SetOrCreate('nickname', username.trim());
 
         return {
           success: true,
@@ -249,13 +261,30 @@ export class UserService {
   }
 
   static async getProfile(username?: string): Promise<UserProfile> {
-    const res = await HttpApi.get<ApiResponse<CurrentUserData>>('/auth/current-user');
+    const res = await HttpApi.get<ApiResponse<BackendUserData>>('/auth/current-user');
 
     if (res.code !== 200 || !res.data) {
       throw new Error(res.message || '获取用户信息失败');
     }
 
     return UserService.toUserProfile(res.data, username || '');
+  }
+
+  static async getProfileByUsername(username: string): Promise<UserProfile> {
+    const target: string = username.trim();
+    if (!target) {
+      throw new Error('用户名不能为空');
+    }
+
+    const res = await HttpApi.get<ApiResponse<BackendUserData>>(
+      `/users/${encodeURIComponent(target)}/profile`
+    );
+
+    if (res.code !== 200 || !res.data) {
+      throw new Error(res.message || '获取用户资料失败');
+    }
+
+    return UserService.toUserProfile(res.data, target);
   }
 
   static async updateProfile(profile: UserProfile): Promise<UserProfile> {
@@ -267,7 +296,7 @@ export class UserService {
         email: profile.email || ''
       };
 
-      const res = await HttpApi.put<ApiResponse<CurrentUserData>>('/users/me/profile', body);
+      const res = await HttpApi.put<ApiResponse<BackendUserData>>('/users/me/profile', body);
 
       if (res.code !== 200 || !res.data) {
         throw new Error(res.message || '修改个人资料失败');
@@ -429,6 +458,8 @@ export class UserService {
           };
         }
 
+        UserService.clearProfileStorage();
+
         return {
           success: true,
           message: '华为账号登录成功',
@@ -445,7 +476,7 @@ export class UserService {
     }
   }
 
-  private static toUserProfile(data: CurrentUserData, fallbackUsername: string): UserProfile {
+  private static toUserProfile(data: BackendUserData, fallbackUsername: string): UserProfile {
     return {
       objectId: data.objectId || '',
       username: data.username || fallbackUsername || '',
