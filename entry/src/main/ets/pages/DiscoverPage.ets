@@ -185,15 +185,17 @@ export struct DiscoverPage {
   build() {
     Column() {
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: 18 }) {
           this.headerSection()
 
           this.voiceSearchCard()
 
           this.imageSearchCard()
 
+          this.bottomGuidePanel()
+
           Blank()
-            .height(24)
+            .height(40)
         }
         .width('100%')
         .alignItems(HorizontalAlign.Center)
@@ -230,7 +232,7 @@ export struct DiscoverPage {
       Row() {
         Column({ space: 6 }) {
           Text('发现')
-            .fontSize(31)
+            .fontSize(34)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
             .letterSpacing(4)
@@ -254,11 +256,11 @@ export struct DiscoverPage {
 
         Column({ space: 4 }) {
           Text('语音识物')
-            .fontSize(16)
+            .fontSize(17)
             .fontWeight(FontWeight.Medium)
             .fontColor('#F8E6D0')
           Text('以图寻珍')
-            .fontSize(16)
+            .fontSize(17)
             .fontWeight(FontWeight.Medium)
             .fontColor('#F8E6D0')
         }
@@ -266,11 +268,11 @@ export struct DiscoverPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ left: 30, right: 30, top: 10 })
+      .padding({ left: 34, right: 34, top: 8 })
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .height(112)
+    .height(128)
     .backgroundColor('#8B2F26')
     .borderRadius({ bottomLeft: 22, bottomRight: 22 })
     .clip(true)
@@ -292,7 +294,7 @@ export struct DiscoverPage {
         .color('#EFE1D2')
       this.guideItem('📷', '以图搜图', '拍照或相册')
     }
-    .width('92%')
+    .width('94%')
     .padding({ left: 16, right: 16, top: 14, bottom: 14 })
     .backgroundColor('#FFFCF7')
     .borderRadius(20)
@@ -464,8 +466,8 @@ export struct DiscoverPage {
           .borderRadius(12)
       }
     }
-    .width('92%')
-    .padding(18)
+    .width('94%')
+    .padding(22)
     .backgroundColor('#FFFCF7')
     .borderRadius(22)
     .shadow({
@@ -556,8 +558,8 @@ export struct DiscoverPage {
           .alignSelf(ItemAlign.Start)
       }
     }
-    .width('92%')
-    .padding(18)
+    .width('94%')
+    .padding(22)
     .backgroundColor('#FFFCF7')
     .borderRadius(22)
     .shadow({
@@ -567,4 +569,72 @@ export struct DiscoverPage {
       offsetY: 4
     })
   }
+  @Builder
+  bottomGuidePanel() {
+    Column({ space: 14 }) {
+      Row() {
+        Column({ space: 4 }) {
+          Text('探索提示')
+            .fontSize(21)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#3F3328')
+          Text('让语音识别与以图搜图更适合平板展示')
+            .fontSize(12)
+            .fontColor('#9A7A5C')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text('Museum Guide')
+          .fontSize(12)
+          .fontColor('#C05243')
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: 10 }) {
+        this.tipItem('01', '说关键词', '名称、年代、材质')
+        this.tipItem('02', '选清晰图', '主体完整更准确')
+        this.tipItem('03', '看结果页', '查看相似馆藏')
+      }
+      .width('100%')
+    }
+    .width('94%')
+    .padding(18)
+    .backgroundColor('#FFFCF7')
+    .borderRadius(22)
+    .shadow({
+      radius: 10,
+      color: '#14000000',
+      offsetX: 0,
+      offsetY: 4
+    })
+  }
+
+  @Builder
+  tipItem(index: string, title: string, desc: string) {
+    Column({ space: 7 }) {
+      Text(index)
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#C05243')
+
+      Text(title)
+        .fontSize(14)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#3F3328')
+
+      Text(desc)
+        .fontSize(11)
+        .fontColor('#9A7A5C')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .layoutWeight(1)
+    .padding({ top: 14, bottom: 14, left: 8, right: 8 })
+    .backgroundColor('#F8F0E8')
+    .borderRadius(16)
+    .alignItems(HorizontalAlign.Center)
+  }
+
 }
