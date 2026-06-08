@@ -220,7 +220,7 @@ export struct LoginPage {
         AppStorage.SetOrCreate('username', result.username || this.account.trim());
 
         promptAction.showToast({ message: result.message || '登录成功' });
-        router.back();
+        router.replaceUrl({ url: 'pages/Index' });
       } else {
         promptAction.showToast({ message: result.message || '登录失败' });
       }
@@ -250,7 +250,7 @@ export struct LoginPage {
         }
 
         promptAction.showToast({ message: result.message || '华为账号登录成功' });
-        router.back();
+        router.replaceUrl({ url: 'pages/Index' });
       } else {
         promptAction.showToast({ message: result.message || '华为账号登录失败' });
       }

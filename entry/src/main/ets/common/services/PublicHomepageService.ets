@@ -4,10 +4,13 @@ import {
   FavoriteItem,
   LikeItem,
   PrivacySettings,
+  ReviewStatus,
   UploadedPhotoItem
 } from '../models/InteractionModels';
-import { interactionStore } from '../store/InteractionStore';
+import { InteractionService } from './InteractionService';
 import { PrivacyService } from './PrivacyService';
+import { UserProfile, UserService } from './UserService';
+import { interactionStore } from '../store/InteractionStore';
 
 export interface PublicUserProfile {
   userId: string;
@@ -35,15 +38,74 @@ export interface PublicHomepageData {
 }
 
 export class PublicHomepageService {
+  private static buildAliasKeys(items: string[]): string[] {
+    const keys: string[] = [];
+    items.forEach((item: string) => {
+      const trimmed = item ? item.trim() : '';
+      if (trimmed && keys.indexOf(trimmed) === -1) {
+        keys.push(trimmed);
+      }
+    });
+    return keys;
+  }
+
+  private static hasAlias(aliases: string[], target: string): boolean {
+    if (!target) {
+      return false;
+    }
+    return aliases.indexOf(target.trim()) > -1;
+  }
+
+  private static buildDefaultProfile(
+    requestedUsername: string,
+    isSelf: boolean
+  ): PublicUserProfile {
+    return {
+      userId: '',
+      username: requestedUsername,
+      nickname: requestedUsername,
+      avatar: '',
+      bio: isSelf ? 'My homepage' : 'PalmMuseum user'
+    };
+  }
+
   static async getPublicHomepage(
     username: string,
     currentUsername: string
   ): Promise<PublicHomepageData> {
-    if (!username) {
-      throw new Error('用户名为空，无法加载主页');
+    const requestedUsername: string = username ? username.trim() : '';
+    const activeUsername: string = currentUsername ? currentUsername.trim() : '';
+    if (!requestedUsername) {
+      throw new Error('Empty username');
     }
 
-    const isSelf: boolean = username === currentUsername;
+    let profile: PublicUserProfile = PublicHomepageService.buildDefaultProfile(
+      requestedUsername,
+      requestedUsername === activeUsername
+    );
+
+    try {
+      const resolvedProfile: UserProfile = await UserService.getProfileByUsername(requestedUsername);
+      profile = {
+        userId: resolvedProfile.objectId || '',
+        username: resolvedProfile.username || requestedUsername,
+        nickname: resolvedProfile.nickname || resolvedProfile.username || requestedUsername,
+        avatar: resolvedProfile.avatar || '',
+        bio: resolvedProfile.bio || profile.bio
+      };
+    } catch (error) {
+      console.error(
+        `[PublicHomepageService] load profile failed username=${requestedUsername}, error=${JSON.stringify(error)}`
+      );
+    }
+
+    const aliasKeys = PublicHomepageService.buildAliasKeys([
+      requestedUsername,
+      profile.username,
+      profile.nickname
+    ]);
+    const resolvedUsername: string = profile.username || requestedUsername;
+    const isSelf: boolean = PublicHomepageService.hasAlias(aliasKeys, activeUsername);
 
     let privacy: PrivacySettings = {
       showFavorites: true,
@@ -52,30 +114,16 @@ export class PublicHomepageService {
       showPhotos: true
     };
 
-    if (isSelf) {
-      // 自己查看自己主页，不受隐私限制。
-      privacy = {
-        showFavorites: true,
-        showLikes: true,
-        showComments: true,
-        showPhotos: true
-      };
-    } else {
+    if (!isSelf) {
       try {
-        // 关键修复：
-        // 他人主页的可见性必须读取后端真实隐私设置，
-        // 不能再用 interactionStore.getPrivacy(username) 的本地模拟数据。
-        privacy = await PrivacyService.getUserPrivacy(username);
-
+        privacy = await PrivacyService.getUserPrivacy(resolvedUsername);
         console.info(
-          `[PublicHomepageService] 读取后端隐私设置 username=${username}, privacy=${JSON.stringify(privacy)}`
+          `[PublicHomepageService] load privacy success username=${resolvedUsername}, privacy=${JSON.stringify(privacy)}`
         );
       } catch (error) {
         console.error(
-          `[PublicHomepageService] 读取后端隐私设置失败 username=${username}, error=${JSON.stringify(error)}`
+          `[PublicHomepageService] load privacy failed username=${resolvedUsername}, error=${JSON.stringify(error)}`
         );
-
-        // 读取失败时为了保护隐私，默认全部不可见。
         privacy = {
           showFavorites: false,
           showLikes: false,
@@ -92,30 +140,46 @@ export class PublicHomepageService {
       uploads: isSelf || privacy.showPhotos
     };
 
-    const favorites: FavoriteItem[] = visible.favorites
-      ? await interactionStore.getFavorites(username)
-      : [];
+    let favorites: FavoriteItem[] = [];
+    if (visible.favorites) {
+      favorites = await InteractionService.getFavorites(resolvedUsername);
+      if (!isSelf && favorites.length === 0) {
+        favorites = await interactionStore.getPublicFavoritesByAliases(aliasKeys);
+      }
+    }
 
-    const likes: LikeItem[] = visible.likes
-      ? await interactionStore.getLikes(username)
-      : [];
+    let likes: LikeItem[] = [];
+    if (visible.likes) {
+      likes = await InteractionService.getLikes(resolvedUsername);
+      if (!isSelf && likes.length === 0) {
+        likes = await interactionStore.getPublicLikesByAliases(aliasKeys);
+      }
+    }
 
-    const comments: CommentItem[] = visible.comments
-      ? await interactionStore.getUserComments(username)
-      : [];
+    let comments: CommentItem[] = [];
+    if (visible.comments) {
+      comments = await InteractionService.getUserComments(resolvedUsername);
+      if (!isSelf) {
+        comments = comments.filter((item: CommentItem) => item.status === ReviewStatus.Approved);
+      }
+      if (!isSelf && comments.length === 0) {
+        comments = await interactionStore.getPublicCommentsByAliases(aliasKeys);
+      }
+    }
 
-    const uploads: UploadedPhotoItem[] = visible.uploads
-      ? await interactionStore.getUploads(username)
-      : [];
+    let uploads: UploadedPhotoItem[] = [];
+    if (visible.uploads) {
+      uploads = await InteractionService.getUploads(resolvedUsername);
+      if (!isSelf) {
+        uploads = uploads.filter((item: UploadedPhotoItem) => item.status === ReviewStatus.Approved);
+      }
+      if (!isSelf && uploads.length === 0) {
+        uploads = await interactionStore.getPublicUploadsByAliases(aliasKeys);
+      }
+    }
 
     return {
-      profile: {
-        userId: '',
-        username: username,
-        nickname: username,
-        avatar: '',
-        bio: isSelf ? '这是我的主页' : '掌上博物馆用户'
-      },
+      profile: profile,
       privacy: privacy,
       visible: visible,
       favorites: favorites,

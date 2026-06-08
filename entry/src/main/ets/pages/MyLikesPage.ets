@@ -1,7 +1,7 @@
 // pages/MyLikesPage.ets
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { LikeItem } from '../common/models/InteractionModels';
 import { formatDateTime } from '../common/utils/InteractionFormatUtil';
 
@@ -26,7 +26,7 @@ export struct MyLikesPage {
     this.isLoading = true;
 
     try {
-      this.likes = await interactionStore.getLikes(this.username);
+      this.likes = await InteractionService.getLikes(this.username);
       console.info(`[MyLikesPage] 加载点赞列表成功 username=${this.username}, count=${this.likes.length}`);
     } catch (error) {
       console.error(`[MyLikesPage] 加载点赞列表失败 ${JSON.stringify(error)}`);
@@ -162,7 +162,7 @@ export struct MyLikesPage {
           .fontColor('#C05040')
           .onClick(async () => {
             try {
-              await interactionStore.removeLike(item.artifactId, this.username);
+              await InteractionService.removeLike(item.artifactId, this.username);
               promptAction.showToast({ message: '已取消点赞' });
               await this.loadLikes();
             } catch (error) {

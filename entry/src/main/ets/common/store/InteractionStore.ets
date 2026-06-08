@@ -29,7 +29,13 @@ const COMMENT_REVIEW_DELAY_MS = 1500;
 class InteractionStore {
   private readonly likeKey = 'pm.likes';
   private readonly likeItemsKey = 'pm.likeItems';
+  private readonly likeCountBaseKey = 'pm.likeCountBase';
   private readonly favoriteKey = 'pm.favorites';
+  private readonly favoriteRemovedKey = 'pm.favoriteRemoved';
+  private readonly publicFavoriteCacheKey = 'pm.publicFavorites';
+  private readonly publicLikeCacheKey = 'pm.publicLikes';
+  private readonly publicCommentCacheKey = 'pm.publicComments';
+  private readonly publicUploadCacheKey = 'pm.publicUploads';
   private readonly favoriteGroupKey = 'pm.favoriteGroups';
   private readonly commentKey = 'pm.comments';
   private readonly commentLikeKey = 'pm.commentLikes';
@@ -91,6 +97,72 @@ class InteractionStore {
     return map;
   }
 
+  private normalizeCacheKeys(items: string[]): string[] {
+    const keys: string[] = [];
+    items.forEach((item: string) => {
+      const trimmed = item ? item.trim() : '';
+      if (trimmed && keys.indexOf(trimmed) === -1) {
+        keys.push(trimmed);
+      }
+    });
+    return keys;
+  }
+
+  private getPublicCacheKeys(username: string): string[] {
+    const currentUsername = AppStorage.Get('username') as string || '';
+    const currentNickname = AppStorage.Get('nickname') as string || '';
+    const keys: string[] = [username];
+    if (currentUsername && (currentUsername === username || currentNickname === username)) {
+      keys.push(currentUsername);
+      keys.push(currentNickname);
+    }
+    return this.normalizeCacheKeys(keys);
+  }
+
+  private async getPublicCachedItems<T>(storageKey: string, aliases: string[]): Promise<T[]> {
+    const lookupKeys = this.normalizeCacheKeys(aliases);
+    if (lookupKeys.length === 0) {
+      return [];
+    }
+    const cacheObj = await this.getJsonValue<Record<string, T[]>>(storageKey, {});
+    const cacheMap = this.objectToMap<T[]>(cacheObj);
+    for (let index = 0; index < lookupKeys.length; index += 1) {
+      const items = cacheMap.get(lookupKeys[index]);
+      if (items && items.length > 0) {
+        return items;
+      }
+    }
+    return [];
+  }
+
+  private async syncPublicLikesCache(username: string): Promise<void> {
+    if (!username) {
+      return;
+    }
+    await this.savePublicLikes(username, await this.getLikes(username));
+  }
+
+  private async syncPublicFavoritesCache(username: string): Promise<void> {
+    if (!username) {
+      return;
+    }
+    await this.savePublicFavorites(username, await this.getFavorites(username));
+  }
+
+  private async syncPublicCommentsCache(username: string): Promise<void> {
+    if (!username) {
+      return;
+    }
+    await this.savePublicComments(username, await this.getUserComments(username));
+  }
+
+  private async syncPublicUploadsCache(username: string): Promise<void> {
+    if (!username) {
+      return;
+    }
+    await this.savePublicUploads(username, await this.getUploads(username));
+  }
+
   private getDefaultFavoriteGroup(): string {
     return FAVORITE_GROUPS[0];
   }
@@ -114,6 +186,25 @@ class InteractionStore {
     const groupMap = this.objectToMap<string[]>(groupObj);
     const customGroups = username ? (groupMap.get(username) || []) : [];
     return this.uniqueStrings([...FAVORITE_GROUPS, ...customGroups]);
+  }
+
+  private async getFavoriteRemovedMap(): Promise<Map<string, string[]>> {
+    const removedObj = await this.getJsonValue<Record<string, string[]>>(this.favoriteRemovedKey, {});
+    return this.objectToMap<string[]>(removedObj);
+  }
+
+  private async markFavoriteRemoved(username: string, artifactId: string, removed: boolean): Promise<void> {
+    if (!username || !artifactId) {
+      return;
+    }
+    const removedMap = await this.getFavoriteRemovedMap();
+    const current = removedMap.get(username) || [];
+    const next = current.filter((item: string) => item !== artifactId);
+    if (removed) {
+      next.unshift(artifactId);
+    }
+    removedMap.set(username, next);
+    await this.setJsonValue(this.favoriteRemovedKey, this.mapToObject(removedMap));
   }
 
   private async normalizeFavoriteGroupForUser(username: string, groupName: string): Promise<string> {
@@ -177,6 +268,13 @@ class InteractionStore {
       cloned.likedByCurrentUser = item.likedByCurrentUser;
     }
     return cloned;
+  }
+
+  private async saveCommentRecord(record: CommentItem, username: string): Promise<void> {
+    const comments = await this.getJsonValue<CommentItem[]>(this.commentKey, []);
+    comments.unshift(this.cloneCommentItem(record));
+    await this.setJsonValue(this.commentKey, comments);
+    await this.syncProfileStats(username);
   }
 
   private shouldAutoApproveComment(item: CommentItem): boolean {
@@ -282,6 +380,18 @@ class InteractionStore {
     };
   }
 
+  private cloneFavoriteItem(item: FavoriteItem): FavoriteItem {
+    return {
+      artifactId: item.artifactId,
+      title: item.title,
+      imageUrl: item.imageUrl,
+      period: item.period,
+      museum: item.museum,
+      groupName: item.groupName,
+      createdAt: item.createdAt
+    };
+  }
+
   private buildHistoryItem(artifact: Artifact): HistoryItem {
     return {
       artifactId: artifact.id,
@@ -325,10 +435,136 @@ class InteractionStore {
     const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
     const likeMap = this.objectToMap<string[]>(likeObj);
     const users = likeMap.get(artifactId) || [];
+    const likeCountBaseObj = await this.getJsonValue<Record<string, number>>(this.likeCountBaseKey, {});
+    const likeCountBaseMap = this.objectToMap<number>(likeCountBaseObj);
+    const cachedBase = likeCountBaseMap.get(artifactId);
+    const countBase = cachedBase !== undefined ? cachedBase : this.buildLikeBaseCount(artifactId);
     return {
       active: username ? users.indexOf(username) > -1 : false,
-      count: this.buildLikeBaseCount(artifactId) + users.length
+      count: countBase + users.length
     };
+  }
+
+  async setLikeCount(artifactId: string, totalCount: number): Promise<void> {
+    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
+    const likeMap = this.objectToMap<string[]>(likeObj);
+    const users = likeMap.get(artifactId) || [];
+    const likeCountBaseObj = await this.getJsonValue<Record<string, number>>(this.likeCountBaseKey, {});
+    const likeCountBaseMap = this.objectToMap<number>(likeCountBaseObj);
+    const nextBase = Math.max(totalCount - users.length, 0);
+    likeCountBaseMap.set(artifactId, nextBase);
+    await this.setJsonValue(this.likeCountBaseKey, this.mapToObject(likeCountBaseMap));
+  }
+
+  async savePublicFavorites(username: string, items: FavoriteItem[]): Promise<void> {
+    if (!username) {
+      return;
+    }
+    const cacheObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.publicFavoriteCacheKey, {});
+    const cacheMap = this.objectToMap<FavoriteItem[]>(cacheObj);
+    const snapshot: FavoriteItem[] = items.map((item: FavoriteItem): FavoriteItem => {
+      return this.cloneFavoriteItem(item);
+    });
+    const keys = this.getPublicCacheKeys(username);
+    keys.forEach((key: string) => {
+      cacheMap.set(key, snapshot);
+    });
+    await this.setJsonValue(this.publicFavoriteCacheKey, this.mapToObject(cacheMap));
+  }
+
+  async getPublicFavorites(username: string): Promise<FavoriteItem[]> {
+    return this.getPublicFavoritesByAliases([username]);
+  }
+
+  async getPublicFavoritesByAliases(aliases: string[]): Promise<FavoriteItem[]> {
+    return this.getPublicCachedItems<FavoriteItem>(this.publicFavoriteCacheKey, aliases);
+  }
+
+  async savePublicLikes(username: string, items: LikeItem[]): Promise<void> {
+    if (!username) {
+      return;
+    }
+    const cacheObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.publicLikeCacheKey, {});
+    const cacheMap = this.objectToMap<LikeItem[]>(cacheObj);
+    const snapshot: LikeItem[] = items.map((item: LikeItem): LikeItem => {
+      return {
+        artifactId: item.artifactId,
+        title: item.title,
+        imageUrl: item.imageUrl,
+        period: item.period,
+        museum: item.museum,
+        likedAt: item.likedAt
+      };
+    });
+    const keys = this.getPublicCacheKeys(username);
+    keys.forEach((key: string) => {
+      cacheMap.set(key, snapshot);
+    });
+    await this.setJsonValue(this.publicLikeCacheKey, this.mapToObject(cacheMap));
+  }
+
+  async getPublicLikes(username: string): Promise<LikeItem[]> {
+    return this.getPublicLikesByAliases([username]);
+  }
+
+  async getPublicLikesByAliases(aliases: string[]): Promise<LikeItem[]> {
+    return this.getPublicCachedItems<LikeItem>(this.publicLikeCacheKey, aliases);
+  }
+
+  async savePublicComments(username: string, items: CommentItem[]): Promise<void> {
+    if (!username) {
+      return;
+    }
+    const cacheObj = await this.getJsonValue<Record<string, CommentItem[]>>(this.publicCommentCacheKey, {});
+    const cacheMap = this.objectToMap<CommentItem[]>(cacheObj);
+    const publicItems = items.filter((item: CommentItem) => item.status === ReviewStatus.Approved);
+    const snapshot: CommentItem[] = publicItems.map((item: CommentItem): CommentItem => {
+      return this.cloneCommentItem(item);
+    });
+    const keys = this.getPublicCacheKeys(username);
+    keys.forEach((key: string) => {
+      cacheMap.set(key, snapshot);
+    });
+    await this.setJsonValue(this.publicCommentCacheKey, this.mapToObject(cacheMap));
+  }
+
+  async getPublicComments(username: string): Promise<CommentItem[]> {
+    return this.getPublicCommentsByAliases([username]);
+  }
+
+  async getPublicCommentsByAliases(aliases: string[]): Promise<CommentItem[]> {
+    return this.getPublicCachedItems<CommentItem>(this.publicCommentCacheKey, aliases);
+  }
+
+  async savePublicUploads(username: string, items: UploadedPhotoItem[]): Promise<void> {
+    if (!username) {
+      return;
+    }
+    const cacheObj = await this.getJsonValue<Record<string, UploadedPhotoItem[]>>(this.publicUploadCacheKey, {});
+    const cacheMap = this.objectToMap<UploadedPhotoItem[]>(cacheObj);
+    const publicItems = items.filter((item: UploadedPhotoItem) => item.status === ReviewStatus.Approved);
+    const snapshot: UploadedPhotoItem[] = publicItems.map((item: UploadedPhotoItem): UploadedPhotoItem => {
+      return this.cloneUploadItem(item);
+    });
+    const keys = this.getPublicCacheKeys(username);
+    keys.forEach((key: string) => {
+      cacheMap.set(key, snapshot);
+    });
+    await this.setJsonValue(this.publicUploadCacheKey, this.mapToObject(cacheMap));
+  }
+
+  async getPublicUploads(username: string): Promise<UploadedPhotoItem[]> {
+    return this.getPublicUploadsByAliases([username]);
+  }
+
+  async getPublicUploadsByAliases(aliases: string[]): Promise<UploadedPhotoItem[]> {
+    return this.getPublicCachedItems<UploadedPhotoItem>(this.publicUploadCacheKey, aliases);
+  }
+
+  async hasLikeRecord(artifactId: string): Promise<boolean> {
+    const likeObj = await this.getJsonValue<Record<string, string[]>>(this.likeKey, {});
+    const likeMap = this.objectToMap<string[]>(likeObj);
+    return likeMap.has(artifactId);
   }
 
   // 修改后的 toggleLike，支持 artifact 参数
@@ -363,7 +599,25 @@ class InteractionStore {
       await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
     }
 
+    await this.syncPublicLikesCache(username);
     await this.syncProfileStats(username);
+    return this.getLikeSummary(artifactId, username);
+  }
+
+  async syncLikeState(
+    artifactId: string,
+    username: string,
+    active: boolean,
+    artifact?: Artifact
+  ): Promise<InteractionSummary> {
+    const current = await this.getLikeSummary(artifactId, username);
+    if (current.active === active) {
+      return current;
+    }
+    if (active) {
+      return this.toggleLike(artifactId, username, artifact);
+    }
+    await this.removeLike(artifactId, username);
     return this.getLikeSummary(artifactId, username);
   }
 
@@ -394,9 +648,10 @@ class InteractionStore {
     const likeItemsObj = await this.getJsonValue<Record<string, LikeItem[]>>(this.likeItemsKey, {});
     const likeItemsMap = this.objectToMap<LikeItem[]>(likeItemsObj);
     let userItems = likeItemsMap.get(username) || [];
-    userItems = userItems.filter(item => item.artifactId !== artifactId);
+    userItems = userItems.filter((item: LikeItem) => item.artifactId !== artifactId);
     likeItemsMap.set(username, userItems);
     await this.setJsonValue(this.likeItemsKey, this.mapToObject(likeItemsMap));
+    await this.syncPublicLikesCache(username);
 
     // 3. 更新统计数据
     await this.syncProfileStats(username);
@@ -420,6 +675,27 @@ class InteractionStore {
     };
   }
 
+  async syncFavoriteState(
+    artifact: Artifact,
+    username: string,
+    active: boolean,
+    groupName: string = FAVORITE_GROUPS[0]
+  ): Promise<InteractionSummary> {
+    const current = await this.getFavoriteSummary(artifact.id, username);
+    if (current.active === active) {
+      if (active) {
+        await this.moveFavoriteToGroup(artifact.id, username, groupName);
+      }
+      return this.getFavoriteSummary(artifact.id, username);
+    }
+    if (active) {
+      await this.markFavoriteRemoved(username, artifact.id, false);
+      return this.toggleFavorite(artifact, username, groupName);
+    }
+    await this.removeFavorite(artifact.id, username);
+    return this.getFavoriteSummary(artifact.id, username);
+  }
+
   async toggleFavorite(
     artifact: Artifact,
     username: string,
@@ -431,12 +707,15 @@ class InteractionStore {
     const existingIndex = list.findIndex((item: FavoriteItem) => item.artifactId === artifact.id);
     if (existingIndex > -1) {
       list.splice(existingIndex, 1);
+      await this.markFavoriteRemoved(username, artifact.id, true);
     } else {
       const normalizedGroup = await this.normalizeFavoriteGroupForUser(username, groupName);
       list.unshift(this.buildFavoriteItem(artifact, normalizedGroup));
+      await this.markFavoriteRemoved(username, artifact.id, false);
     }
     favoriteMap.set(username, list);
     await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    await this.syncPublicFavoritesCache(username);
     await this.syncProfileStats(username);
     return this.getFavoriteSummary(artifact.id, username);
   }
@@ -459,6 +738,43 @@ class InteractionStore {
       };
       return normalizedItem;
     });
+  }
+
+  async ensureFavoriteItem(username: string, item: FavoriteItem): Promise<void> {
+    if (!username) {
+      return;
+    }
+    const favoriteObj = await this.getJsonValue<Record<string, FavoriteItem[]>>(this.favoriteKey, {});
+    const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
+    const favorites = favoriteMap.get(username) || [];
+    const existingIndex = favorites.findIndex((current: FavoriteItem) => current.artifactId === item.artifactId);
+    const normalizedGroup = await this.normalizeFavoriteGroupForUser(username, item.groupName);
+    const nextItem: FavoriteItem = {
+      artifactId: item.artifactId,
+      title: item.title,
+      imageUrl: item.imageUrl,
+      period: item.period,
+      museum: item.museum,
+      groupName: normalizedGroup,
+      createdAt: item.createdAt
+    };
+    if (existingIndex > -1) {
+      favorites[existingIndex] = nextItem;
+    } else {
+      favorites.unshift(this.cloneFavoriteItem(nextItem));
+    }
+    favoriteMap.set(username, favorites);
+    await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    await this.markFavoriteRemoved(username, item.artifactId, false);
+    await this.syncPublicFavoritesCache(username);
+  }
+
+  async getRemovedFavoriteIds(username: string): Promise<string[]> {
+    if (!username) {
+      return [];
+    }
+    const removedMap = await this.getFavoriteRemovedMap();
+    return removedMap.get(username) || [];
   }
 
   async getFavoriteGroups(username: string): Promise<string[]> {
@@ -506,6 +822,7 @@ class InteractionStore {
     });
     favoriteMap.set(username, favorites);
     await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    await this.syncPublicFavoritesCache(username);
     await this.syncProfileStats(username);
     return this.loadFavoriteGroups(username);
   }
@@ -542,6 +859,8 @@ class InteractionStore {
     target.groupName = await this.normalizeFavoriteGroupForUser(username, groupName);
     favoriteMap.set(username, favorites);
     await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    await this.markFavoriteRemoved(username, artifactId, false);
+    await this.syncPublicFavoritesCache(username);
     return target.groupName;
   }
 
@@ -558,6 +877,8 @@ class InteractionStore {
     const favoriteMap = this.objectToMap<FavoriteItem[]>(favoriteObj);
     favoriteMap.set(username, (favoriteMap.get(username) || []).filter((item: FavoriteItem) => item.artifactId !== artifactId));
     await this.setJsonValue(this.favoriteKey, this.mapToObject(favoriteMap));
+    await this.markFavoriteRemoved(username, artifactId, true);
+    await this.syncPublicFavoritesCache(username);
     await this.syncProfileStats(username);
   }
 
@@ -612,11 +933,56 @@ class InteractionStore {
     const existingIndex = users.indexOf(username);
     if (existingIndex === -1) {
       users.unshift(username);
+    } else {
+      users.splice(existingIndex, 1);
     }
     likeMap.set(commentId, users);
     await this.setJsonValue(this.commentLikeKey, this.mapToObject(likeMap));
     await this.syncProfileStats(username);
     return this.getCommentLikeSummary(commentId, username);
+  }
+
+  async syncCommentLikeState(commentId: string, username: string, active: boolean): Promise<InteractionSummary> {
+    const likeMap = await this.getCommentLikeMap();
+    const users = likeMap.get(commentId) || [];
+    const existingIndex = users.indexOf(username);
+    if (active && existingIndex === -1) {
+      users.unshift(username);
+    }
+    if (!active && existingIndex > -1) {
+      users.splice(existingIndex, 1);
+    }
+    likeMap.set(commentId, users);
+    await this.setJsonValue(this.commentLikeKey, this.mapToObject(likeMap));
+    await this.syncProfileStats(username);
+    return this.getCommentLikeSummary(commentId, username);
+  }
+
+  async addCommentMirror(
+    artifact: Artifact,
+    username: string,
+    content: string,
+    parentId: string = '',
+    replyTo: string = ''
+  ): Promise<CommentItem> {
+    const record: CommentItem = {
+      id: `comment-${Date.now()}`,
+      artifactId: artifact.id,
+      artifactTitle: artifact.title,
+      username: username,
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+      status: ReviewStatus.Pending
+    };
+    if (parentId) {
+      record.parentId = parentId;
+    }
+    if (replyTo) {
+      record.replyTo = replyTo;
+    }
+    await this.saveCommentRecord(record, username);
+    await this.syncPublicCommentsCache(username);
+    return record;
   }
 
   async addComment(
@@ -640,25 +1006,7 @@ class InteractionStore {
       return { ok: false, message: '评论包含敏感词，请修改后再试' };
     }
 
-    const comments = await this.getJsonValue<CommentItem[]>(this.commentKey, []);
-    const record: CommentItem = {
-      id: `comment-${Date.now()}`,
-      artifactId: artifact.id,
-      artifactTitle: artifact.title,
-      username: username,
-      content: trimmed,
-      createdAt: new Date().toISOString(),
-      status: ReviewStatus.Pending
-    };
-    if (parentId) {
-      record.parentId = parentId;
-    }
-    if (replyTo) {
-      record.replyTo = replyTo;
-    }
-    comments.unshift(record);
-    await this.setJsonValue(this.commentKey, comments);
-    await this.syncProfileStats(username);
+    await this.addCommentMirror(artifact, username, trimmed, parentId, replyTo);
     return { ok: true, message: '评论已提交，等待审核' };
   }
 
@@ -686,6 +1034,7 @@ class InteractionStore {
       status: ReviewStatus.Pending
     });
     await this.setJsonValue(this.uploadKey, uploads);
+    await this.syncPublicUploadsCache(draft.username);
     await this.syncProfileStats(draft.username);
   }
 
