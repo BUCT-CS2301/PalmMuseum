@@ -1,7 +1,7 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { FAVORITE_GROUPS, FavoriteGroupSummary, FavoriteItem } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { formatDateTime } from '../common/utils/InteractionFormatUtil';
 
 const ALL_GROUP = '全部';
@@ -24,9 +24,9 @@ export struct MyFavoritesPage {
 
   async loadFavorites() {
     this.isLoading = true;
-    this.favorites = await interactionStore.getFavorites(this.username);
-    this.favoriteGroups = await interactionStore.getFavoriteGroups(this.username);
-    this.groupSummaries = await interactionStore.getFavoriteGroupSummaries(this.username);
+    this.favorites = await InteractionService.getFavorites(this.username);
+    this.favoriteGroups = await InteractionService.getFavoriteGroups(this.username);
+    this.groupSummaries = await InteractionService.getFavoriteGroupSummaries(this.username);
     if (this.selectedGroup !== ALL_GROUP && this.favoriteGroups.indexOf(this.selectedGroup) === -1) {
       this.selectedGroup = ALL_GROUP;
     }
@@ -144,7 +144,7 @@ export struct MyFavoritesPage {
             promptAction.showToast({ message: '收藏夹名称已存在' });
             return;
           }
-          await interactionStore.addFavoriteGroup(this.username, trimmed);
+          await InteractionService.addFavoriteGroup(this.username, trimmed);
           this.newGroupName = '';
           this.selectedGroup = trimmed;
           promptAction.showToast({ message: '收藏夹已创建' });
@@ -194,7 +194,7 @@ export struct MyFavoritesPage {
           .fontColor('#C05040')
           .margin({ right: 16, top: 4 })
           .onClick(async () => {
-            await interactionStore.deleteFavoriteGroup(this.username, this.selectedGroup);
+            await InteractionService.deleteFavoriteGroup(this.username, this.selectedGroup);
             this.selectedGroup = ALL_GROUP;
             promptAction.showToast({ message: '收藏夹已删除，内容已迁移到默认分组' });
             await this.loadFavorites();
@@ -277,7 +277,7 @@ export struct MyFavoritesPage {
           .fontSize(13)
           .fontColor('#C05040')
           .onClick(async () => {
-            await interactionStore.removeFavorite(item.artifactId, this.username);
+            await InteractionService.removeFavorite(item.artifactId, this.username);
             this.editingArtifactId = '';
             promptAction.showToast({ message: '已移出收藏夹' });
             await this.loadFavorites();
@@ -298,7 +298,12 @@ export struct MyFavoritesPage {
               .borderRadius(14)
               .margin({ right: 8, top: 10 })
               .onClick(async () => {
-                await interactionStore.moveFavoriteToGroup(item.artifactId, this.username, groupName);
+                if (item.groupName === groupName) {
+                  promptAction.showToast({ message: `当前已在“${groupName}”` });
+                  return;
+                }
+                await InteractionService.moveFavoriteToGroup(item.artifactId, this.username, groupName);
+                this.editingArtifactId = '';
                 promptAction.showToast({ message: `已移到“${groupName}”` });
                 await this.loadFavorites();
               })

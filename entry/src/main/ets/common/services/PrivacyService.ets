@@ -1,6 +1,7 @@
 // common/services/PrivacyService.ets
 import { HttpApi } from '../network/HttpApi';
 import { PrivacySettings } from '../models/InteractionModels';
+import { interactionStore } from '../store/InteractionStore';
 
 interface ApiResponse<T> {
   code: number;
@@ -46,19 +47,24 @@ export class PrivacyService {
       throw new Error('请先登录');
     }
 
-    const res = await HttpApi.get<ApiResponse<BackendPrivacySettings>>(
-      `/users/${targetUsername}/privacy`
-    );
+    try {
+      const res = await HttpApi.get<ApiResponse<BackendPrivacySettings>>(
+        `/users/${targetUsername}/privacy`
+      );
 
-    if (res.code !== 200 || !res.data) {
-      throw new Error(res.message || '获取隐私设置失败');
+      if (res.code !== 200 || !res.data) {
+        throw new Error(res.message || '获取隐私设置失败');
+      }
+
+      const privacy = PrivacyService.toFrontend(res.data);
+      await interactionStore.savePrivacy(targetUsername, privacy);
+      return privacy;
+    } catch (error) {
+      console.error(`[PrivacyService] 获取后端隐私设置失败，改用本地兜底 ${JSON.stringify(error)}`);
+      return interactionStore.getPrivacy(targetUsername);
     }
-
-    return PrivacyService.toFrontend(res.data);
   }
 
-  // 注意：这里故意用 username 在前、privacy 在后，
-  // 是为了匹配你现有 PrivacySettingPage.ets 的调用方式。
   static async updateMyPrivacy(
     username: string,
     privacy: PrivacySettings
@@ -69,18 +75,26 @@ export class PrivacyService {
       throw new Error('请先登录');
     }
 
-    const body: BackendPrivacySettings = PrivacyService.toBackend(privacy);
+    try {
+      const body: BackendPrivacySettings = PrivacyService.toBackend(privacy);
 
-    const res = await HttpApi.put<ApiResponse<BackendPrivacySettings>>(
-      `/users/${targetUsername}/privacy`,
-      body
-    );
+      const res = await HttpApi.put<ApiResponse<BackendPrivacySettings>>(
+        `/users/${targetUsername}/privacy`,
+        body
+      );
 
-    if (res.code !== 200 || !res.data) {
-      throw new Error(res.message || '保存隐私设置失败');
+      if (res.code !== 200 || !res.data) {
+        throw new Error(res.message || '保存隐私设置失败');
+      }
+
+      const saved = PrivacyService.toFrontend(res.data);
+      await interactionStore.savePrivacy(targetUsername, saved);
+      return saved;
+    } catch (error) {
+      console.error(`[PrivacyService] 保存后端隐私设置失败，改用本地兜底 ${JSON.stringify(error)}`);
+      await interactionStore.savePrivacy(targetUsername, privacy);
+      return interactionStore.getPrivacy(targetUsername);
     }
-
-    return PrivacyService.toFrontend(res.data);
   }
 
   static async getUserPrivacy(username: string): Promise<PrivacySettings> {

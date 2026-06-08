@@ -249,12 +249,42 @@ export struct OtherProfilePage {
   @Builder
   FavoriteList() {
     Column({ space: 12 }) {
-      ForEach(this.favorites, (item: FavoriteItem) => {
-        this.FavoriteRow(item)
-      }, (item: FavoriteItem) => item.artifactId)
+      ForEach(this.getFavoriteGroupNames(), (groupName: string) => {
+        this.FavoriteGroupSection(groupName)
+      }, (groupName: string) => groupName)
     }
     .width('100%')
     .padding({ left: 16, right: 16 })
+  }
+
+  @Builder
+  FavoriteGroupSection(groupName: string) {
+    Column({ space: 8 }) {
+      Row() {
+        Text(groupName)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#8B7355')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor('#EADFD2')
+          .borderRadius(14)
+
+        Blank()
+
+        Text(`${this.getFavoritesByGroup(groupName).length}`)
+          .fontSize(12)
+          .fontColor('#8B7355')
+      }
+      .width('100%')
+
+      Column({ space: 12 }) {
+        ForEach(this.getFavoritesByGroup(groupName), (item: FavoriteItem) => {
+          this.FavoriteRow(item)
+        }, (item: FavoriteItem) => `${groupName}-${item.artifactId}`)
+      }
+      .width('100%')
+    }
+    .width('100%')
   }
 
   @Builder
@@ -519,5 +549,27 @@ export struct OtherProfilePage {
     }
 
     return '';
+  }
+
+  private getFavoriteGroupNames(): string[] {
+    const groupNames: string[] = [];
+    this.favorites.forEach((item: FavoriteItem) => {
+      const groupName = item.groupName && item.groupName.trim().length > 0
+        ? item.groupName.trim()
+        : '默认收藏夹';
+      if (groupNames.indexOf(groupName) === -1) {
+        groupNames.push(groupName);
+      }
+    });
+    return groupNames;
+  }
+
+  private getFavoritesByGroup(groupName: string): FavoriteItem[] {
+    return this.favorites.filter((item: FavoriteItem) => {
+      const currentGroup = item.groupName && item.groupName.trim().length > 0
+        ? item.groupName.trim()
+        : '默认收藏夹';
+      return currentGroup === groupName;
+    });
   }
 }

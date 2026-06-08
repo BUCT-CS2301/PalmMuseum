@@ -1,6 +1,6 @@
 import router from '@ohos.router';
 import { CommentItem, ReviewStatus } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
 
 @Entry
@@ -22,7 +22,7 @@ export struct MyCommentsPage {
 
   async loadComments() {
     this.isLoading = true;
-    this.comments = await interactionStore.getUserComments(this.username);
+    this.comments = await InteractionService.getUserComments(this.username);
     this.isLoading = false;
     if (this.comments.some((item: CommentItem) => item.status === ReviewStatus.Pending)) {
       this.scheduleReviewRefresh();

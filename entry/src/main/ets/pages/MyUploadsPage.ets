@@ -1,7 +1,8 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
+import common from '@ohos.app.ability.common';
 import { ReviewStatus, UploadedPhotoItem } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { formatDateTime, formatReviewColor, formatReviewStatus } from '../common/utils/InteractionFormatUtil';
 import { pickSingleImageUri } from '../common/utils/PhotoPickerUtil';
 
@@ -28,7 +29,7 @@ export struct MyUploadsPage {
 
   async loadUploads() {
     this.isLoading = true;
-    this.uploads = await interactionStore.getUploads(this.username);
+    this.uploads = await InteractionService.getUploads(this.username);
     this.isLoading = false;
     if (this.uploads.some((item: UploadedPhotoItem) => item.status === ReviewStatus.Pending)) {
       this.scheduleReviewRefresh();
@@ -239,7 +240,8 @@ export struct MyUploadsPage {
     if (!imageUri) {
       return;
     }
-    await interactionStore.addUpload({
+    const context = getContext(this) as common.UIAbilityContext;
+    const result = await InteractionService.addUpload(context, {
       artifactId: artifactId,
       artifactTitle: artifactTitle,
       username: this.username,
@@ -247,8 +249,10 @@ export struct MyUploadsPage {
       location: this.draftLocation,
       description: this.draftDescription
     });
-    this.draftDescription = '';
-    promptAction.showToast({ message: '照片已上传，等待审核' });
+    if (result.ok) {
+      this.draftDescription = '';
+    }
+    promptAction.showToast({ message: result.message });
     await this.loadUploads();
     this.scheduleReviewRefresh();
   }

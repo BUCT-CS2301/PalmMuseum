@@ -1,6 +1,6 @@
 import router from '@ohos.router';
 import { HistoryItem } from '../common/models/InteractionModels';
-import { interactionStore } from '../common/store/InteractionStore';
+import { InteractionService } from '../common/services/InteractionService';
 import { formatDateTime } from '../common/utils/InteractionFormatUtil';
 
 @Entry
@@ -16,7 +16,7 @@ export struct MyHistoryPage {
 
   async loadHistory() {
     this.isLoading = true;
-    this.historyList = await interactionStore.getHistory(this.username);
+    this.historyList = await InteractionService.getHistory(this.username);
     this.isLoading = false;
   }
 
